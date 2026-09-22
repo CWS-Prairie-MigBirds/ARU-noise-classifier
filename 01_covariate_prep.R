@@ -34,7 +34,7 @@ head(filez)
 # sites are stored in their own sub-folders, this can be used to generate samples 
 #with n samples per location)
 
-sample_size <- 1  #if using more than 1 recording per spatial location (folder) 
+sample_size <- 6  #if using more than 1 recording per spatial location (folder) 
                   #then maybe get >= 6 so random effects can be included to account 
                   #for repeated measures
 
@@ -98,16 +98,17 @@ get_noise_metrics <- function(files){
 
         })
 
-        # Acoustic Complexity Index
-        t_aci <- system.time({
+        # Ruido background noise and soundscape power
+        t_BGN <- system.time({
 
-          aci_out <- soundecology::acoustic_complexity(
+          bgn_out <- Ruido::bgNoise(
             wav,
-            j = 5,
-            max_freq = 22050
+            channel = "stereo",
+            timeBin = 60,
+            dbThreshold = -90
           )
 
-          aci_val <- max(
+          bgn_val <- max(
             aci_out$AciTotAll_left,
             aci_out$AciTotAll_right,
             na.rm = TRUE
@@ -115,27 +116,43 @@ get_noise_metrics <- function(files){
 
         })
 
-        if (!is.finite(aci_val)) {
-          aci_val <- NA_real_
-        }
-
+        # Ruido spectral temporal entropy index
+        t_ENT <- system.time({
+          
+          ent_out <- Ruido::ENTspec(
+            wav,
+            channel = "stereo",
+            timeBin = 60
+          )
+          
+          ent_val <- max(
+            aci_out$AciTotAll_left,
+            aci_out$AciTotAll_right,
+            na.rm = TRUE
+          )
+          
+        })
+        
         data.frame(
           file = file,
           folder = dirname(file),
 
           lowfreq_ratio = lowfreq_ratio,
           rms = rms_val,
-          aci = aci_val,
+          bgn = bgn_val,
+          ent = ent_val,
 
           time_read = t_read["elapsed"],
           time_spec = t_spec["elapsed"],
           time_rms = t_rms["elapsed"],
-          time_aci = t_aci["elapsed"],
+          time_bgn = t_bgn["elapsed"],
+          time_ent = t_ent["elapsed"],
           time_total =
             t_read["elapsed"] +
             t_spec["elapsed"] +
             t_rms["elapsed"] +
-            t_aci["elapsed"]
+            t_bgn["elapsed"] +
+            t_ent["elapsed"]
         )
 
       }, error = function(e){
@@ -153,12 +170,14 @@ get_noise_metrics <- function(files){
 
           lowfreq_ratio = NA_real_,
           rms = NA_real_,
-          aci = NA_real_,
+          bgn = NA_real_,
+          ent = NA_real_,
 
           time_read = NA_real_,
           time_spec = NA_real_,
           time_rms = NA_real_,
-          time_aci = NA_real_,
+          time_bgn = NA_real_,
+          time_ent = NA_real_,
           time_total = NA_real_
         )
 
