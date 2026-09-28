@@ -8,7 +8,7 @@ setWavPlayer(shQuote("C:/Program Files/Audacity/Audacity.exe"))
 
 # load classify function
 
-source(classify_function_v2.R)
+source("classify_function_v2.R")
 
 # read in sampled file csv
 
