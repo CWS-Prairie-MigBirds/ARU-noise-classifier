@@ -1,5 +1,7 @@
-#### Developing a bespoke recognizer of good vs poor recordings
-#### Steven Van Wilgenburg
+#### Function to extract metrics of wind
+# NAs can be produced by ACI because implementations use a logarithmic 
+# transformation internally and if a file or a frequency bin contains only zeros 
+# then log(0) = -Inf
 
 library(tuneR)
 library(seewave)
@@ -9,51 +11,6 @@ library(tuneR)
 library(ARUtools)
 library(ARUtoolsExtra)
 library(Ruido)
-
-
-install.packages("Ruido")
-
-
-#setwd("D:/BBMP/2026/") #### set the working directory to the location of recordings on hard drive
-
-# Root directory to search
-startingDir <- "D:/BBMP/2026/"
-
-# Find all files in all subdirectories containing the prefix
-filez <- list.files(
-  path = startingDir,
-  pattern = "*.wav",
-  recursive = TRUE,
-  full.names = TRUE
-)
-
-head(filez)
-
- 
-## set the number of .wav files to sample from each sub-folder (assuming unique 
-# sites are stored in their own sub-folders, this can be used to generate samples 
-#with n samples per location)
-
-sample_size <- 6  #if using more than 1 recording per spatial location (folder) 
-                  #then maybe get >= 6 so random effects can be included to account 
-                  #for repeated measures
-
-file_df <- data.frame(
-  file = filez,
-  folder = dirname(filez)
-)
-
-sampled_files <- file_df %>%
-  group_by(folder) %>%
-  sample_n(size = min(sample_size, n())) %>%
-  ungroup()
-  
-head(sampled_files)
-
-#### Function to extract metrics of wind
-# NAs can be produced by ACI because implementations use a logarithmic 
-# transformation internally and if a file or a frequency bin contains only zeros 
-# then log(0) = -Inf
 
 ### set a standardized recording length to read in (in seconds)
 standardlength <- 180 #### 3 minute recording

@@ -15,13 +15,13 @@ score_recordings <- function(noise_metrics){
     repeat{
       answer <- tolower(
         readline(
-          prompt = "Acceptable for processing? (y = yes, n = no, x = stop): "
+          prompt = "Acceptable for processing? (y = yes, n = no, b = borderline x = stop): "
         )
       )
       
-      if(answer %in% c("y","n","x")) break
+      if(answer %in% c("y","n", "b", "x")) break
       
-      cat("Please enter y, n, or x.\n")
+      cat("Please enter y, n, b, or x.\n")
     }
     
     if(answer == "x"){
@@ -31,11 +31,15 @@ score_recordings <- function(noise_metrics){
       
     } else if(answer == "y"){
       
-      noise_metrics$acceptable[i] <- 1
+      noise_metrics$acceptable[i] <- "y"
       
     } else if(answer == "n"){
       
-      noise_metrics$acceptable[i] <- 0
+      noise_metrics$acceptable[i] <- "n"
+      
+    } else if(answer == "b"){
+      
+      noise_metrics$acceptable[i] <- "b"
       
     }
   }
