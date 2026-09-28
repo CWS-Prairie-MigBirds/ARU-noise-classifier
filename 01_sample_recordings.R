@@ -50,21 +50,10 @@ sampled <- filez %>%
   group_by(site, period) %>% 
   slice_sample(n = 3) %>% ungroup()
 
+# add broad habitat type based on the program who deployed the ARUs
+
+sampled$habitat <- "grassland"
+
 # save csv for step 2
 
 write_csv(sampled, "CWS_PRA_model_train_recording_sample.csv")
-
-
-
-########### older STeve code below
-file_df <- data.frame(
-  file = filez,
-  folder = dirname(filez)
-)
-
-sampled_files <- file_df %>%
-  group_by(folder) %>%
-  sample_n(size = min(sample_size, n())) %>%
-  ungroup()
-
-head(sampled_files)
