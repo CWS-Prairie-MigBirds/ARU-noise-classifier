@@ -22,7 +22,7 @@ score_recordings <- function(noise_metrics, out_file = "scored_recordings.csv"){
     cat(basename(noise_metrics$file[i]), "\n")
     cat("---------------------------------\n")
     
-    play(noise_metrics$file[i])
+    system(paste(shQuote(audacity_path), shQuote(noise_metrics$file[i])), wait = FALSE)
     
     # Q1: acceptable?
     answer <- ask(
@@ -37,7 +37,13 @@ score_recordings <- function(noise_metrics, out_file = "scored_recordings.csv"){
     
     # Q2: clipping (always asked)
     noise_metrics$clipping[i] <- ask(
-      "Is clipping present in the recording? (y/n): ",
+      "Is clipping (>5%) present in the recording? (y/n): ",
+      c("y", "n")
+    )
+    
+    # Q3: amphibians/insects (always asked)
+    noise_metrics$clipping[i] <- ask(
+      "Is excessive (>50%) insect or amphibian noise present? (y/n): ",
       c("y", "n")
     )
     

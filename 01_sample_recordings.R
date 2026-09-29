@@ -6,7 +6,7 @@ library(tidyverse)
 library(lubridate)
 
 # Root directory to search
-startingDir <- "D:/BBMP/2026/"
+startingDir <- "D:/ARU RECORDINGS/2022/BC/BC-15"
 
 # Find all files in all subdirectories containing the prefix
 filez <- list.files(
@@ -56,4 +56,4 @@ sampled$habitat <- "grassland"
 
 # save csv for step 2
 
-write_csv(sampled, "CWS_PRA_model_train_recording_sample.csv")
+write_csv(sampled, "CWS_PRA_SBCR22_model_train_recording_sample.csv")
