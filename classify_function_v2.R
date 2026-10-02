@@ -26,8 +26,8 @@ score_recordings <- function(noise_metrics, out_file = "scored_recordings.csv"){
     
     # Q1: acceptable?
     answer <- ask(
-      "Acceptable for processing? (y = yes, n = no, b = borderline, x = stop): ",
-      c("y", "n", "b", "x")
+      "Acceptable for processing? (y = yes, n = no, b = borderline, m = malfunction, x = stop): ",
+      c("y", "n", "b", "m", "x")
     )
     
     if(answer == "x"){
