@@ -1,5 +1,6 @@
 ## Classify recordings
 
+library(tidyverse)
 library(tuneR)
 
 # CODE AUDACITY SETTINGS DIRECTLY?? Use the settings in this pdf
@@ -20,6 +21,9 @@ source("classify_function_v2.R")
 # NOTE: IF YOU ARE RESUMING WORK ON THE SAME FILE, SKIP TO CODE LINE 25
 
 noise_metrics <- read_csv("CWS_PRA_SBCR22_model_train_recording_sample.csv")
+
+##RENAME THE SCORED RECORDINGS OUTFILE BEFORE STARTING TO MATCH THE ORGANIZATION and DATA in 
+## recording sample file name
 
 #### begin recording review/scoring
 # follow the prompts in the Console below

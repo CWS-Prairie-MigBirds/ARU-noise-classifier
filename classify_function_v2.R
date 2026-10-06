@@ -6,11 +6,12 @@ ask <- function(prompt, choices = NULL){
   }
 }
 
-score_recordings <- function(noise_metrics, out_file = "scored_recordings.csv"){
+score_recordings <- function(noise_metrics, out_file){
   
   # Create columns only if they don't already exist (allows resuming)
   if(!"acceptable" %in% names(noise_metrics)) noise_metrics$acceptable <- NA_character_
   if(!"clipping" %in% names(noise_metrics)) noise_metrics$clipping <- NA_character_
+  if(!"amphibian_insect" %in% names(noise_metrics)) noise_metrics$amphibian_insect <- NA_character_
   
   for(i in seq_len(nrow(noise_metrics))){
     
@@ -42,7 +43,7 @@ score_recordings <- function(noise_metrics, out_file = "scored_recordings.csv"){
     )
     
     # Q3: amphibians/insects (always asked)
-    noise_metrics$clipping[i] <- ask(
+    noise_metrics$amphibian_insect[i] <- ask(
       "Is excessive (>50%) insect or amphibian noise present? (y/n): ",
       c("y", "n")
     )
