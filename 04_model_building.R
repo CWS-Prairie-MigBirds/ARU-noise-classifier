@@ -1,4 +1,14 @@
 
+noise_metrics <- noise_metrics %>%
+  mutate(
+    z_lowfreq = scale(lowfreq_ratio)[,1],
+    z_rms = scale(rms)[,1],
+    z_aci = scale(aci)[,1],
+    WCI = z_lowfreq + z_rms - z_aci
+  ) %>%
+  arrange(desc(WCI))
+
+
 ### global model
 glm1<- glm(formula = acceptable ~ z_lowfreq + z_rms + z_aci, family = binomial, data = noise_metrics)
 

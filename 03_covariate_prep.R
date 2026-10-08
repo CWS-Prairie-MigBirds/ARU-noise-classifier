@@ -3,6 +3,7 @@
 # transformation internally and if a file or a frequency bin contains only zeros 
 # then log(0) = -Inf
 
+library(tidyverse)
 library(tuneR)
 library(seewave)
 library(soundecology)
@@ -12,8 +13,14 @@ library(ARUtools)
 library(ARUtoolsExtra)
 library(Ruido)
 
+
+sample <- read_csv("CWS_PRA_BRNWA25_model_train_recording_sample.csv")
+
 ### set a standardized recording length to read in (in seconds)
 standardlength <- 180 #### 3 minute recording
+
+
+##function to extract netrics of noise
 
 get_noise_metrics <- function(files){
 
@@ -65,10 +72,7 @@ get_noise_metrics <- function(files){
             dbThreshold = -90
           )
 
-          bgn_val <- max(
-            aci_out$AciTotAll_left,
-            aci_out$AciTotAll_right,
-            na.rm = TRUE
+          bgn_val <- ??? #### What do we want to extract out of the noise matrix here?
           )
 
         })
@@ -82,9 +86,39 @@ get_noise_metrics <- function(files){
             timeBin = 60
           )
           
-          ent_val <- max(
-            aci_out$AciTotAll_left,
-            aci_out$AciTotAll_right,
+          ent_max1 <- max(
+            ent_out@values$left$ENT$ENT1,
+            ent_out@values$right$ENT$ENT1,
+            na.rm = TRUE
+          )
+          
+          ent_max2 <- max(
+            ent_out@values$left$ENT$ENT2,
+            ent_out@values$right$ENT$ENT2,
+            na.rm = TRUE
+          )
+          
+          ent_max3 <- max(
+            ent_out@values$left$ENT$ENT3,
+            ent_out@values$right$ENT$ENT3,
+            na.rm = TRUE
+          )
+          
+          ent_mean1 <- mean(
+            ent_out@values$left$ENT$ENT1,
+            ent_out@values$right$ENT$ENT1,
+            na.rm = TRUE
+          )
+          
+          ent_mean2 <- mean(
+            ent_out@values$left$ENT$ENT2,
+            ent_out@values$right$ENT$ENT2,
+            na.rm = TRUE
+          )
+          
+          ent_mean3 <- mean(
+            ent_out@values$left$ENT$ENT3,
+            ent_out@values$right$ENT$ENT3,
             na.rm = TRUE
           )
           
@@ -96,20 +130,25 @@ get_noise_metrics <- function(files){
 
           lowfreq_ratio = lowfreq_ratio,
           rms = rms_val,
-          bgn = bgn_val,
-          ent = ent_val,
+          bgn = ??????, #UPDATE
+          ent_max1 = ent_max1,
+          ent_max2 = ent_max2,
+          ent_max3 = ent_max3,
+          ent_mean1 = ent_mean1,
+          ent_mean2 = ent_mean2,
+          ent_mean3 = ent_mean3,
 
           time_read = t_read["elapsed"],
           time_spec = t_spec["elapsed"],
           time_rms = t_rms["elapsed"],
-          time_bgn = t_bgn["elapsed"],
-          time_ent = t_ent["elapsed"],
+          time_bgn = t_BGN["elapsed"],
+          time_ent = t_ENT["elapsed"],
           time_total =
             t_read["elapsed"] +
             t_spec["elapsed"] +
             t_rms["elapsed"] +
-            t_bgn["elapsed"] +
-            t_ent["elapsed"]
+            t_BGN["elapsed"] +
+            t_ENT["elapsed"]
         )
 
       }, error = function(e){
@@ -127,8 +166,13 @@ get_noise_metrics <- function(files){
 
           lowfreq_ratio = NA_real_,
           rms = NA_real_,
-          bgn = NA_real_,
-          ent = NA_real_,
+          bgn = NA_real_, ##UPDATE
+          ent_max1 = NA_real_,
+          ent_max2 = NA_real_,
+          ent_max3 = NA_real_,
+          ent_mean1 = NA_real_,
+          ent_mean2 = NA_real_,
+          ent_mean3 = NA_real_,
 
           time_read = NA_real_,
           time_spec = NA_real_,
@@ -144,20 +188,15 @@ get_noise_metrics <- function(files){
   )
 }
 
-system.time(get_noise_metrics(sampled_files$file[2]))
+#test run time
 
+system.time(get_noise_metrics(sample$file[2]))
 
-noise_metrics <- get_noise_metrics(sampled_files$file)
+#run on full sample of recordings
+noise_metrics <- get_noise_metrics(sample$file)
 
 head(noise_metrics)
 
-noise_metrics <- noise_metrics %>%
-  mutate(
-    z_lowfreq = scale(lowfreq_ratio)[,1],
-    z_rms = scale(rms)[,1],
-    z_aci = scale(aci)[,1],
-    WCI = z_lowfreq + z_rms - z_aci
-  ) %>%
-  arrange(desc(WCI))
-
+#save file
+write_csv(noise_metrics, "CWS_PRA_BRNWA25_model_train_recording_sample.csv")
 
