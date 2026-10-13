@@ -118,7 +118,7 @@ get_noise_metrics <- function(files){
 # Run -------------------------------------------------------------------
 #########
 
-sample <- read_csv("CWS_PRA_BRNWA25_model_train_recording_sample.csv")
+sample <- read_csv("data/sample/CWS_PRA_BRNWA25_model_train_recording_sample.csv")
 
 timing <- system.time({
   metrics <- get_noise_metrics(sample$file)

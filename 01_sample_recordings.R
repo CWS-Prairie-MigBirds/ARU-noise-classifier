@@ -56,4 +56,4 @@ sampled$habitat <- "grassland"
 
 # save csv for step 2
 
-write_csv(sampled, "CWS_PRA_SBCR22_model_train_recording_sample.csv")
+write_csv(sampled, "data/sample/CWS_PRA_SBCR22_model_train_recording_sample.csv")
