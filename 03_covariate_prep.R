@@ -1,202 +1,129 @@
 #### Function to extract metrics of wind
-# NAs can be produced by ACI because implementations use a logarithmic 
-# transformation internally and if a file or a frequency bin contains only zeros 
-# then log(0) = -Inf
 
 library(tidyverse)
 library(tuneR)
 library(seewave)
-library(soundecology)
-library(dplyr)
-library(tuneR)
-library(ARUtools)
-library(ARUtoolsExtra)
 library(Ruido)
 
+standardlength <- 180   # 3 minute recordings (seconds)
 
-sample <- read_csv("CWS_PRA_BRNWA25_model_train_recording_sample.csv")
+############
+# Helpers ---------------------------------------------------------------
+############
 
-### set a standardized recording length to read in (in seconds)
-standardlength <- 180 #### 3 minute recording
+# Pull one index's matrix (freq bin x time bin) for one channel
+get_mat <- function(obj, index, channel = 1){
+  as.matrix(obj@values[[channel]][[index]])
+}
 
+# Collapse a matrix to per-recording values
+# select the range of values most of our species are detected in
+# pick the top end of ourlow frequency where wind and engine noise show up often
 
-##function to extract netrics of noise
+summarize_mat <- function(m, samp_rate, prefix,
+                          bird_hz = c(1000, 12000), low_hz = 1000){
+  
+  m[!is.finite(m)] <- NA
+  
+  freqs <- (seq_len(nrow(m)) - 0.5) * (samp_rate / 2) / nrow(m)
+  bird  <- freqs >= bird_hz[1] & freqs <= bird_hz[2]
+  low   <- freqs < low_hz
+  
+  # median acros windows within each 60s time bin
+  per_min <- apply(m[bird, , drop = FALSE], 2, median, na.rm = TRUE)
+  
+  out <- c(
+    median(per_min, na.rm = TRUE),   # typical minute
+    max(per_min, na.rm = TRUE),      # worst minute
+    median(m[low, ], na.rm = TRUE)   # wind/traffic band
+  )
+  names(out) <- paste0(prefix, c("_bird_med", "_bird_max", "_low_med"))
+  out
+}
+
+# Summarize every channel; returns channel-averaged + per-channel values
+summarize_channels <- function(obj, index, prefix){
+  
+  chans <- names(obj@values)   # "left" (mono) or c("left","right")
+  
+  per_ch <- lapply(chans, function(ch){
+    summarize_mat(get_mat(obj, index, ch), obj@sampRate, prefix)
+  })
+  
+  sep <- unlist(lapply(seq_along(chans), function(i){
+    x <- per_ch[[i]]
+    names(x) <- sub(paste0("^", prefix),
+                    paste0(prefix, "_", substr(chans[i], 1, 1)),
+                    names(x))
+    x
+  }))
+  
+  avg <- colMeans(do.call(rbind, per_ch))
+  
+  c(avg, sep)
+}
+
+################
+# Main function ---------------------------------------------------------
+################
 
 get_noise_metrics <- function(files){
-
+  
   bind_rows(
     lapply(files, function(file){
-
+      
       tryCatch({
-
-        # Read WAV
-        t_read <- system.time({
-          wav <- readWave(
-            file,
-            from = 0,
-            to = standardlength,
-            units = "seconds"
-          )
-        })
-
-        # Mean spectrum
-        t_spec <- system.time({
-
-          spec <- meanspec(
-            wav,
-            plot = FALSE
-          )
-
-          freq_hz <- spec[,1] * 1000
-
-          lowfreq_ratio <-
-            sum(spec[freq_hz < 250, 2]) /
-            sum(spec[,2])
-
-        })
-
+        
+        wav <- readWave(file, from = 0, to = standardlength, units = "seconds")
+        ch_arg <- if (wav@stereo) "stereo" else "left"
+        
+        # Mean spectrum: proportion of energy below 250 Hz
+        spec <- meanspec(wav, plot = FALSE)
+        freq_hz <- spec[, 1] * 1000
+        lowfreq_ratio <- sum(spec[freq_hz < 250, 2]) / sum(spec[, 2])
+        
         # RMS amplitude
-        t_rms <- system.time({
-
-          rms_val <- seewave::rms(wav@left)
-
-        })
-
-        # Ruido background noise and soundscape power
-        t_BGN <- system.time({
-
-          bgn_out <- Ruido::bgNoise(
-            wav,
-            channel = "stereo",
-            timeBin = 60,
-            dbThreshold = -90
-          )
-
-          bgn_val <- ??? #### What do we want to extract out of the noise matrix here?
-          )
-
-        })
-
-        # Ruido spectral temporal entropy index
-        t_ENT <- system.time({
-          
-          ent_out <- Ruido::ENTspec(
-            wav,
-            channel = "stereo",
-            timeBin = 60
-          )
-          
-          ent_max1 <- max(
-            ent_out@values$left$ENT$ENT1,
-            ent_out@values$right$ENT$ENT1,
-            na.rm = TRUE
-          )
-          
-          ent_max2 <- max(
-            ent_out@values$left$ENT$ENT2,
-            ent_out@values$right$ENT$ENT2,
-            na.rm = TRUE
-          )
-          
-          ent_max3 <- max(
-            ent_out@values$left$ENT$ENT3,
-            ent_out@values$right$ENT$ENT3,
-            na.rm = TRUE
-          )
-          
-          ent_mean1 <- mean(
-            ent_out@values$left$ENT$ENT1,
-            ent_out@values$right$ENT$ENT1,
-            na.rm = TRUE
-          )
-          
-          ent_mean2 <- mean(
-            ent_out@values$left$ENT$ENT2,
-            ent_out@values$right$ENT$ENT2,
-            na.rm = TRUE
-          )
-          
-          ent_mean3 <- mean(
-            ent_out@values$left$ENT$ENT3,
-            ent_out@values$right$ENT$ENT3,
-            na.rm = TRUE
-          )
-          
-        })
+        rms_val <- seewave::rms(wav@left)
+        
+        # Ruido: background noise + soundscape power
+        bgn_out  <- Ruido::bgNoise(wav, channel = ch_arg,
+                                   timeBin = 60, dbThreshold = -90)
+        bgn_vals <- summarize_channels(bgn_out, "BGN", "bgn")
+        pow_vals <- summarize_channels(bgn_out, "POW", "pow")
+        
+        # Ruido: spectral temporal entropy
+        ent_out  <- Ruido::ENTspec(wav, channel = ch_arg, timeBin = 60)
+        ent_vals <- summarize_channels(ent_out, ent_out@index[1], "ent")
         
         data.frame(
           file = file,
           folder = dirname(file),
-
           lowfreq_ratio = lowfreq_ratio,
           rms = rms_val,
-          bgn = ??????, #UPDATE
-          ent_max1 = ent_max1,
-          ent_max2 = ent_max2,
-          ent_max3 = ent_max3,
-          ent_mean1 = ent_mean1,
-          ent_mean2 = ent_mean2,
-          ent_mean3 = ent_mean3,
-
-          time_read = t_read["elapsed"],
-          time_spec = t_spec["elapsed"],
-          time_rms = t_rms["elapsed"],
-          time_bgn = t_BGN["elapsed"],
-          time_ent = t_ENT["elapsed"],
-          time_total =
-            t_read["elapsed"] +
-            t_spec["elapsed"] +
-            t_rms["elapsed"] +
-            t_BGN["elapsed"] +
-            t_ENT["elapsed"]
+          t(bgn_vals),
+          t(pow_vals),
+          t(ent_vals),
+          error = NA_character_
         )
-
+        
       }, error = function(e){
-
-        message(
-          "Failed: ",
-          basename(file),
-          " | Reason: ",
-          e$message
-        )
-
-        data.frame(
-          file = file,
-          folder = dirname(file),
-
-          lowfreq_ratio = NA_real_,
-          rms = NA_real_,
-          bgn = NA_real_, ##UPDATE
-          ent_max1 = NA_real_,
-          ent_max2 = NA_real_,
-          ent_max3 = NA_real_,
-          ent_mean1 = NA_real_,
-          ent_mean2 = NA_real_,
-          ent_mean3 = NA_real_,
-
-          time_read = NA_real_,
-          time_spec = NA_real_,
-          time_rms = NA_real_,
-          time_bgn = NA_real_,
-          time_ent = NA_real_,
-          time_total = NA_real_
-        )
-
+        data.frame(file = file, folder = dirname(file),
+                   error = conditionMessage(e))
       })
-
     })
   )
 }
 
-#test run time
+#########
+# Run -------------------------------------------------------------------
+#########
 
-system.time(get_noise_metrics(sample$file[2]))
+sample <- read_csv("CWS_PRA_BRNWA25_model_train_recording_sample.csv")
 
-#run on full sample of recordings
-noise_metrics <- get_noise_metrics(sample$file)
+timing <- system.time({
+  metrics <- get_noise_metrics(sample$file)
+})
 
-head(noise_metrics)
+timing # how long did it take to run
 
-#save file
-write_csv(noise_metrics, "CWS_PRA_BRNWA25_model_train_recording_sample.csv")
 
