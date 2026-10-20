@@ -1,4 +1,4 @@
-#### Function to extract metrics of wind
+#### Function to extract metrics of wind and other noise
 
 library(tidyverse)
 library(tuneR)
@@ -118,7 +118,7 @@ get_noise_metrics <- function(files){
 # Run -------------------------------------------------------------------
 #########
 
-sample <- read_csv("data/sample/CWS_PRA_BRNWA25_model_train_recording_sample.csv")
+sample <- read_csv("data/scored/CWS_PRA_YNLR_2025_scored_recordings.csv")
 
 timing <- system.time({
   metrics <- get_noise_metrics(sample$file)
@@ -126,4 +126,6 @@ timing <- system.time({
 
 timing # how long did it take to run
 
+### save file
 
+write_csv(metrics, "data/CWS_PRA_YNLR_2025_scored_metrics.csv")
