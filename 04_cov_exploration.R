@@ -67,7 +67,7 @@ df_scored <- left_join(df, select(scored_datadf, file, acceptable), by = "file")
    ))) |> 
    ##creating boxplots
    ggplot(aes(x = acceptable, y = value, fill = acceptable)) +
-   geom_boxplot(alpha = 0.7) +
+   geom_boxplot(alpha = 0.7, notch = TRUE) +
    facet_wrap(~ variable, scales = "free_y", ncol = 4) + 
    scale_fill_brewer(palette = "Set2") +
    labs(
