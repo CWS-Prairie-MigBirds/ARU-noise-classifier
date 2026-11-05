@@ -7,14 +7,22 @@ library(GGally)
 library(ggplot2)
 
 
-# 1. read in all scored data with metrics
+###########################
+# START HERE
+###########################
 
-file_list <- list.files(path = "data/", pattern = "\\.csv$", full.names = TRUE)
+df <- readRDS("data/complete_noise_dataset.rds")
 
-# 2. Read and combine them all at once
-# The 'id' argument adds a column showing which file the data came from
-
-df <- read_csv(file_list, id = "source_file")
+#############################
+### scale the variables 
+noise_metrics <- noise_metrics %>%
+  mutate(
+    z_lowfreq = scale(lowfreq_ratio)[,1],
+    z_rms = scale(rms)[,1],
+    z_aci = scale(aci)[,1],
+    WCI = z_lowfreq + z_rms - z_aci
+  ) %>%
+  arrange(desc(WCI))
 
 
 # 3. Correlogram

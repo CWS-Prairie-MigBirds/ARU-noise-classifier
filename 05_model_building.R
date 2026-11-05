@@ -1,3 +1,6 @@
+## Model Building
+
+## z-transform noise covariates
 
 noise_metrics <- noise_metrics %>%
   mutate(
@@ -8,6 +11,20 @@ noise_metrics <- noise_metrics %>%
   ) %>%
   arrange(desc(WCI))
 
+
+## split into 70% of property locations for grassland
+## use one year of boreal data
+
+
+## then graph covs again
+
+
+##
+
+
+############################################################
+################################################################
+## code below is from Steve's initial pilot
 
 ### global model
 glm1<- glm(formula = acceptable ~ z_lowfreq + z_rms + z_aci, family = binomial, data = noise_metrics)
