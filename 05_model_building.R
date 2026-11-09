@@ -1,20 +1,50 @@
 ## Model Building
 
+library(dplyr)
+library(stringr)
+library(ordinal)
+
 ## z-transform noise covariates
 
-noise_metrics <- noise_metrics %>%
-  mutate(
-    z_lowfreq = scale(lowfreq_ratio)[,1],
-    z_rms = scale(rms)[,1],
-    z_aci = scale(aci)[,1],
-    WCI = z_lowfreq + z_rms - z_aci
-  ) %>%
-  arrange(desc(WCI))
+covs <- c("lowfreq_ratio", "rms",
+          "bgn_bird_med", "bgn_bird_max", "bgn_low_med",
+          "pow_bird_med", "pow_bird_max", "pow_low_med",
+          "ent_bird_med", "ent_bird_max", "ent_low_med")
+
+z_df <- df |>
+  mutate(across(all_of(covs),
+                ~ as.numeric(scale(.x))))
 
 
 ## split into 70% of property locations for grassland
-## use one year of boreal data
+set.seed(123)
+grassland_df <- z_df %>% filter(habitat == "grassland")
+grassland_split <- grassland_df %>% slice_sample(prop = 0.7)
 
+## split into 70% of PSUs for boreal
+boreal_df <- z_df %>% filter(habitat == "boreal")
+
+# 2. Pull the PSU out of the path (the folder right after the second BBMP)
+#    Handles both / and \ in paths
+boreal_df <- boreal_df %>%
+  mutate(psu = str_split_fixed(gsub("\\\\", "/", as.character(site)), "/", 7)[, 5])
+
+sum(is.na(boreal_df$psu))   # should be 0
+table(boreal_df$psu)
+
+# 4. Randomly pick 70% of the PSUs
+set.seed(123)
+psus_70 <- boreal_df %>%
+  distinct(psu) %>%
+  slice_sample(prop = 0.7)
+
+# 5. Keep every recording from those PSUs
+boreal_70 <- boreal_df %>%
+  semi_join(psus_70, by = "psu")
+
+# 6. (Optional) the other 30% of PSUs, e.g. as a test set
+boreal_30 <- boreal_df %>%
+  anti_join(psus_70, by = "psu")
 
 ## then graph covs again
 
@@ -26,10 +56,49 @@ noise_metrics <- noise_metrics %>%
 ################################################################
 ## code below is from Steve's initial pilot
 
-### global model
-glm1<- glm(formula = acceptable ~ z_lowfreq + z_rms + z_aci, family = binomial, data = noise_metrics)
+### global model for boreal
+boreal_ord <- boreal_70 %>%
+  filter(acceptable %in% c("y", "b", "n")) %>%
+  mutate(acceptable = factor(acceptable,
+                             levels = c("y", "b", "n"),
+                             labels = c("Good", "Borderline", "Bad"),
+                             ordered = TRUE))
+
+##global model
+clm1<- clm(acceptable ~ lowfreq_ratio +rms + bgn_bird_med + bgn_bird_max +
+bgn_low_med + pow_bird_med + pow_bird_max + pow_low_med + ent_bird_med +ent_bird_max +ent_low_med, 
+data = boreal_ord)
+summary(clm1)
+
+clm2<- clm(acceptable ~ lowfreq_ratio +rms + bgn_bird_med + pow_bird_med + pow_bird_max + pow_low_med + ent_bird_med +ent_bird_max +ent_low_med, 
+           data = boreal_ord)
+summary(clm2)
+
+clm3<- clm(acceptable ~ lowfreq_ratio +rms + bgn_bird_max +
+             pow_bird_med + pow_bird_max + pow_low_med + ent_bird_med +ent_bird_max +ent_low_med, 
+           data = boreal_ord)
+summary(clm3)
+
+clm4<- clm(acceptable ~ lowfreq_ratio +rms +
+             bgn_low_med + pow_bird_med + pow_bird_max + pow_low_med + ent_bird_med +ent_bird_max +ent_low_med, 
+           data = boreal_ord)
+summary(clm4)
 
 ## two-variable
+
+clm5<- clm(acceptable ~ rms + bgn_low_med,
+           data = boreal_ord)
+summary(clm5)
+
+# 1. Expected vs observed counts
+probs <- predict(clm5, newdata = boreal_ord, type = "prob")$fit
+colSums(probs)     # model-expected Good / Borderline / Bad
+table(boreal_ord$acceptable)     # observed
+
+# 2. Can it tell Bad from not-Bad? (AUC: 0.5 = coin flip, 1 = perfect)
+library(pROC)
+roc(boreal_ord$acceptable == "Bad", probs[, "Bad"], na.rm = TRUE)
+
 glm2<- glm(formula = acceptable ~ z_lowfreq + z_rms, family = binomial, data = noise_metrics)
 glm3<- glm(formula = acceptable ~ z_lowfreq + z_aci, family = binomial, data = noise_metrics)
 glm4<- glm(formula = acceptable ~  z_rms + z_aci, family = binomial, data = noise_metrics)

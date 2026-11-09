@@ -5,6 +5,8 @@
 library(tidyverse)
 library(GGally)
 library(ggplot2)
+library(dplyr)
+library(patchwork)
 
 
 ###########################
@@ -15,75 +17,85 @@ df <- readRDS("data/complete_noise_dataset.rds")
 
 #############################
 ### scale the variables 
-noise_metrics <- noise_metrics %>%
-  mutate(
-    z_lowfreq = scale(lowfreq_ratio)[,1],
-    z_rms = scale(rms)[,1],
-    z_aci = scale(aci)[,1],
-    WCI = z_lowfreq + z_rms - z_aci
-  ) %>%
-  arrange(desc(WCI))
 
+covs <- c("lowfreq_ratio", "rms",
+          "bgn_bird_med", "bgn_bird_max", "bgn_low_med",
+          "pow_bird_med", "pow_bird_max", "pow_low_med",
+          "ent_bird_med", "ent_bird_max", "ent_low_med")
 
-# 3. Correlogram
-covariates <- df |>
-  filter(is.na(error)) |>
-  select(lowfreq_ratio, rms,
-         matches("^(bgn|pow|ent)_(bird_med|bird_max|low_med)$"))
+z_df <- df |>
+  mutate(across(all_of(covs),
+                ~ as.numeric(scale(.x))))
 
-ggcorr(covariates,
+# 1. Correlogram
+## df of covariates for each habitat type
+boreal_covs <- z_df[z_df$habitat == "boreal", covs]
+grassland_covs <- z_df[z_df$habitat == "grassland", covs]
+
+##correlogram for boreal
+boreal_corr <- ggcorr(boreal_covs,
        method = c("pairwise", "spearman"),
        label = TRUE, label_size = 3, label_round = 2,
        hjust = 0.9, layout.exp = 2,) +
-  labs(title = "Correlogram of Covariates") +
+  labs(title = "Correlogram of Covariates (Boreal)") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) 
+boreal_corr
+##correlogram for grassland
+grassland_corr <- ggcorr(grassland_covs,
+       method = c("pairwise", "spearman"),
+       label = TRUE, label_size = 3, label_round = 2,
+       hjust = 0.9, layout.exp = 2,) +
+  labs(title = "Correlogram of Covariates (Grassland)") +
   theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+grassland_corr
 
-# 4. Scatterplots
-scatterplots <- pairs(covariates,
+##side by side
+boreal_corr + grassland_corr
+
+# 2. Scatterplots
+##boreal scatterplot
+boreal_scatter <- pairs(boreal_covs,
         cex = 0.5,
         cex.labels = 0.9,
-      main = "Scatterplot Matrix of Covariates")
+      main = "Scatterplot Matrix of Covariates (Boreal)") 
+boreal_scatter
 
-# 5. Boxplots by quality of recording
-##reading data in
-scored_data <- list.files(path = "C:/Users/KokoszkaN/Desktop/recordings", pattern = "\\.csv$", full.names = TRUE) ##from my directory but can paste with folder from git
-scored_datadf <- read_csv(scored_data)
+##grassland scatter
+grassland_scatter <- pairs(grassland_covs,
+                        cex = 0.5,
+                        cex.labels = 0.9,
+                        main = "Scatterplot Matrix of Covariates (Grassland)") 
+grassland_scatter
 
-##adding "acceptable" column to df
-df_scored <- left_join(df, select(scored_datadf, file, acceptable), by = "file")
-
- df_scored |>
-   ##selecting acceptable and covariates
-  select(acceptable, lowfreq_ratio, rms, bgn_bird_med, bgn_bird_max, bgn_low_med,
-         pow_bird_med, pow_bird_max, pow_low_med, ent_bird_med, ent_bird_max, ent_low_med) |>
-   ##filtering out malfunction (m)
-    filter(acceptable %in% c("y", "n", "b")) |> 
-   ##adding labels
-    mutate(acceptable = factor(acceptable,
+# 3. Boxplots by quality of recording
+z_df <- z_df |>
+  filter(acceptable %in% c("y", "n", "b")) |> ##filtering out malfunction
+  mutate(acceptable = factor(acceptable,
                              levels = c("y", "n", "b"),
-                             labels = c("Good", "Bad", "Borderline"))) |> 
-   ##changing the df from every covariate having its own column to all covariates being in the variable column
-   pivot_longer(cols = c(lowfreq_ratio, rms, bgn_bird_med, bgn_bird_max, bgn_low_med,
-               pow_bird_med, pow_bird_max, pow_low_med, ent_bird_med, ent_bird_max, ent_low_med),
+                             labels = c("Good", "Bad", "Borderline"))) |> ##creating labels for boxplots
+  pivot_longer(cols = c(lowfreq_ratio, rms, bgn_bird_med, bgn_bird_max, bgn_low_med,
+                        pow_bird_med, pow_bird_max, pow_low_med, ent_bird_med, ent_bird_max, ent_low_med),
                names_to = "variable",
-                          values_to = "value") |> 
-   ##reordering how the boxplots order appears
-    mutate(variable = factor(variable, levels = c(
-     "bgn_bird_med", "pow_bird_med", "ent_bird_med", "lowfreq_ratio", ##row 1
-     "bgn_bird_max", "pow_bird_max", "ent_bird_max", "rms", ##row 2
-     "bgn_low_med", "pow_low_med", "ent_low_med" ##row 3
-   ))) |> 
-   ##creating boxplots
-   ggplot(aes(x = acceptable, y = value, fill = acceptable)) +
-   geom_boxplot(alpha = 0.7, notch = TRUE) +
-   facet_wrap(~ variable, scales = "free_y", ncol = 4) + 
-   scale_fill_brewer(palette = "Set2") +
-   labs(
-     title = "Distribution of Covariates by Recording Quality",
-     x = "Recording Quality",
-     y = "Measurement Value"
-   ) +
-   theme_minimal() +
-   theme(plot.title = element_text(hjust = 0.5, face = "bold"), 
-                                   legend.position = "none")
+               values_to = "value") |> ##adding variable column
+  mutate(variable = factor(variable, levels = c(
+    "bgn_bird_med", "pow_bird_med", "ent_bird_med", "lowfreq_ratio", ##row 1
+    "bgn_bird_max", "pow_bird_max", "ent_bird_max", "rms", ##row 2
+    "bgn_low_med", "pow_low_med", "ent_low_med" ##row 3
+  ))) ##ordering how the boxplots will appear
+
+quality_bps <-  ggplot(z_df, aes(x = acceptable, y = value, fill = acceptable)) +
+  geom_boxplot(alpha = 0.7, notch = TRUE) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 4) + 
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Distribution of Covariates by Recording Quality",
+    x = "Recording Quality",
+    y = "Measurement Value"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"), 
+        legend.position = "none")
+
+quality_bps ##printing plot
+
  
