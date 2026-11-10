@@ -3,6 +3,7 @@
 ##installing packages
 install.packages("ordinal")
 install.packages("bbmle")
+install.packages("MuMIn")
 
 ##library
 library(dplyr)
@@ -10,6 +11,7 @@ library(stringr)
 library(ordinal)
 library(performance)
 library(bbmle)
+library(MuMIn)
 
 ## z-transform noise covariates
 
@@ -54,12 +56,12 @@ boreal_ord <- boreal_70 %>%
                              labels = c("Good", "Borderline", "Bad"),
                              ordered = TRUE))
 ##global model
-clm1<- clm(acceptable ~ lowfreq_ratio +rms + bgn_bird_med + bgn_bird_max +
-bgn_low_med + pow_bird_med + pow_bird_max + pow_low_med + ent_bird_med +ent_bird_max +ent_low_med, 
+clm1<- clm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med + bgn_bird_max +
+bgn_low_med + pow_bird_med + pow_bird_max + pow_low_med + ent_bird_med + ent_bird_max + ent_low_med, 
 data = boreal_ord)
 
 ##checking for collinearity 
-performance::check_collinearity(all_covs)
+performance::check_collinearity(covs)
 
 #### all bgns are highly correlated so we will choose which to keep ####
 
@@ -85,15 +87,16 @@ AICtab(all_covs, bgn_bmed, bgn_bmax, bgn_lowmed)
 
 clm5 <- clm(acceptable ~ lowfreq_ratio +rms +
               bgn_low_med + pow_bird_max + pow_low_med + ent_bird_med +ent_bird_max +ent_low_med, 
-            data = boreal_ord)
+            data = boreal_ord) ##no pow_bird_med
 
 clm6 <- clm(acceptable ~ lowfreq_ratio +rms +
               bgn_low_med + pow_bird_max + pow_bird_med + ent_bird_med +ent_bird_max +ent_low_med, 
-            data = boreal_ord)
+            data = boreal_ord) ##no pow_low_med
 
+##clm7, clm8, clm9 are moels with each ent
 clm7 <- clm(acceptable ~ lowfreq_ratio +rms +
               bgn_low_med + pow_bird_max + pow_bird_med + ent_bird_med, 
-            data = boreal_ord)
+            data = boreal_ord) 
 
 clm8 <- clm(acceptable ~ lowfreq_ratio +rms +
               bgn_low_med + pow_bird_max + pow_bird_med + ent_bird_max, 
@@ -103,6 +106,7 @@ clm9 <- clm(acceptable ~ lowfreq_ratio +rms +
                bgn_low_med + pow_bird_max + pow_bird_med + ent_low_med, 
              data = boreal_ord)
 
+##clm10 and clm11 are just clm5 (best model) with either rms or lowfreq_ratio bc they are correlated
 clm10 <- clm(acceptable ~ rms +
                bgn_low_med + pow_bird_max + pow_low_med + ent_bird_med +ent_bird_max +ent_low_med, 
              data = boreal_ord)
@@ -111,15 +115,18 @@ clm11 <- clm(acceptable ~ lowfreq_ratio +
                bgn_low_med + pow_bird_max + pow_low_med + ent_bird_med +ent_bird_max +ent_low_med, 
              data = boreal_ord)
 
+##model with only variables from the noise band (low frequency band)
 clm12 <- clm(acceptable ~ lowfreq_ratio + rms + bgn_low_med + pow_low_med + ent_low_med,
-             data = boreal_ord) ##curiosity based, trying the model with only factors from noise band
+             data = boreal_ord) 
 
+## clm13 and clm14 are clm12 with ether rms or lowfreq_ratio
 clm13 <- clm(acceptable ~ lowfreq_ratio + bgn_low_med + pow_low_med + ent_low_med,
              data = boreal_ord)
 
 clm14 <- clm(acceptable ~ rms + bgn_low_med + pow_low_med + ent_low_med,
              data = boreal_ord)
 
+##model with only variables from the bird band, and then with rms or lowfreq_ratio
 clm15 <- clm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med + pow_bird_med + ent_bird_med,
              data = boreal_ord)
 
@@ -129,6 +136,7 @@ clm16 <- clm(acceptable ~ lowfreq_ratio + bgn_bird_med + pow_bird_med + ent_bird
 clm17 <- clm(acceptable ~ rms + bgn_bird_med + pow_bird_med + ent_bird_med,
              data = boreal_ord)
 
+##model with rms and lowfreq_ratio removed
 clm18 <- clm(acceptable ~ bgn_low_med + pow_low_med + ent_low_med,
 data = boreal_ord)
 
@@ -168,8 +176,6 @@ aic_tab
 
 # Optional: print nicely
 print(aic_tab, row.names = FALSE)
-
-
 
 ################## the rest of steves scripts that I don't understand right now ####################
 colMeans(df[, c("time_read","time_spec","time_rms","time_aci","time_total")],na.rm = TRUE)
