@@ -14,6 +14,13 @@ library(performance)
 library(bbmle)
 library(irr)
 library(caret)
+library(broom)
+library(tidyr)
+library(ggplot2)
+library(GGally)
+
+
+df <- readRDS("data/complete_noise_dataset.rds")
 
 ## z-transform noise covariates
 
@@ -82,241 +89,108 @@ ordered_70 <- df_70 |>
                              levels = c("y", "b", "n"),
                              labels = c("Good", "Borderline", "Bad"),
                              ordered = TRUE))
-##global model
-clm1<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med + bgn_bird_max +
-bgn_low_med + pow_bird_med + pow_bird_max + pow_low_med + ent_bird_med + ent_bird_max + ent_low_med + (1|site), 
-data = ordered_70)
+
+ordered_30 <- df_30 |>
+  filter(acceptable %in% c("y", "b", "n")) |>
+  mutate(acceptable = factor(acceptable,
+                             levels = c("y", "b", "n"),
+                             labels = c("Good", "Borderline", "Bad"),
+                             ordered = TRUE))
+
+#### Build models for candidate variable subgroups and select which to retain to avoid inclusion of correlated variables
+
+### entropy
+ent1<-clmm(acceptable ~ ent_bird_med + (1|site), data = ordered_70)
+ent2<-clmm(acceptable ~ ent_bird_max + (1|site), data = ordered_70)
+ent3<-clmm(acceptable ~ ent_low_med + (1|site), data = ordered_70)
+AICtab(ent1, ent2, ent3) ### retain only ent_low_med
+
+### power
+pow1<-clmm(acceptable ~ pow_bird_med + (1|site), data = ordered_70)
+pow2<-clmm(acceptable ~ pow_bird_max + (1|site), data = ordered_70)
+pow3<-clmm(acceptable ~ pow_low_med + (1|site), data = ordered_70)
+AICtab(pow1, pow2, pow3) ### retain only pow_low_med
+
+### bgn
+bgn1<-clmm(acceptable ~ bgn_bird_med + (1|site), data = ordered_70)
+bgn2<-clmm(acceptable ~ bgn_bird_max + (1|site), data = ordered_70)
+bgn3<-clmm(acceptable ~ bgn_low_med + (1|site), data = ordered_70)
+AICtab(bgn1, bgn2, bgn3) ### retain only bgn_bird_med
+
+
+cor(ordered_70$lowfreq_ratio, ordered_70$rms,use = "pairwise.complete.obs")
+plot(ordered_70$lowfreq_ratio, ordered_70$rms)
+
+### Drop some of the highly correlated variables
+covs_70 <- df_70 |>
+  select(all_of(covs))
+covs_70<-covs_70[, !names(covs_70) %in% c("ent_bird_med", "ent_bird_max", "pow_bird_med", "pow_bird_max", "bgn_bird_max", "bgn_low_med")]
+
+corr_70 <- ggcorr(covs_70,
+                  method = c("pairwise", "spearman"),
+                  label = TRUE, label_size = 3, label_round = 2,
+                  hjust = 0.9, layout.exp = 2,) +
+  labs(title = "Correlogram of Covariates") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) 
+corr_70
+
+
+##global main effects model
+clm1<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + (1|site), data = ordered_70)
 
 ##checking for collinearity 
 performance::check_collinearity(clm1)
 
-#### all bgns are highly correlated so we will choose which to keep ####
 
-##global model with bgn_bird_med
-clm2<- clmm(acceptable ~ lowfreq_ratio +rms + bgn_bird_med + pow_bird_med + pow_bird_max + pow_low_med + ent_bird_med +
-             ent_bird_max + ent_low_med  + (1|site) , 
-           data = ordered_70)
+##global model with all interactions
+clm2<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*rms + lowfreq_ratio*ent_low_med + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
 
-##global model with bgn_bird_max
-clm3<- clmm(acceptable ~ lowfreq_ratio +rms + bgn_bird_max +
-             pow_bird_med + pow_bird_max + pow_low_med + ent_bird_med + ent_bird_max + ent_low_med  + (1|site), 
-           data = ordered_70)
+##checking for collinearity 
+performance::check_collinearity(clm2)
 
-##global model with bgn_low_Med
-clm4<- clmm(acceptable ~ lowfreq_ratio +rms +
-             bgn_low_med + pow_bird_med + pow_bird_max + pow_low_med + ent_bird_med + ent_bird_max + ent_low_med  + (1|site), 
-           data = ordered_70)
 
-##selcting which model is best using AIC 
-AICtab(clm1, clm2, clm3, clm4)
+#### single interaction model
+clm3<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*rms +(1|site), data = ordered_70)
+##checking for collinearity 
+performance::check_collinearity(clm3)
 
-##Other models -- clm1 but testing without each of the highly correlated variables
+#### single interaction model
+clm4<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*ent_low_med +(1|site), data = ordered_70)
+##checking for collinearity 
+performance::check_collinearity(clm4)
 
-clm5 <- clmm(acceptable ~ lowfreq_ratio +rms +
-              bgn_low_med + bgn_bird_max + pow_bird_max + pow_low_med + pow_bird_med + ent_bird_med + ent_bird_max + ent_low_med
-             + (1|site), 
-            data = ordered_70) ##no bgn_bird_med
 
-clm6 <- clmm(acceptable ~ lowfreq_ratio +rms +
-              bgn_low_med + bgn_bird_med + pow_bird_max + pow_low_med + pow_bird_med + ent_bird_med + ent_bird_max + ent_low_med
-             + (1|site), 
-            data = ordered_70) ##no bgn_bird_max
+#### single interaction model
+clm5<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
+##checking for collinearity 
+performance::check_collinearity(clm5)
 
-clm7 <- clmm(acceptable ~ lowfreq_ratio +rms +
-              bgn_low_med + bgn_bird_med + bgn_bird_max + pow_bird_max + pow_low_med + ent_bird_med + ent_bird_max + ent_low_med
-             + (1|site), 
-            data = ordered_70) ##no pow_bird_med
 
-clm8 <- clmm(acceptable ~ lowfreq_ratio +rms +
-              bgn_low_med + bgn_bird_med + bgn_bird_max + pow_low_med + pow_bird_med + ent_bird_med + ent_bird_max + ent_low_med
-             + (1|site), 
-            data = ordered_70) ##no pow_bird_max
+#### two interaction model
+clm6<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*rms + lowfreq_ratio*ent_low_med +(1|site), data = ordered_70)
+##checking for collinearity 
+performance::check_collinearity(clm6)
 
-clm9 <- clmm(acceptable ~ lowfreq_ratio +rms +
-              bgn_low_med + bgn_bird_med + bgn_bird_max + pow_bird_max + pow_low_med + pow_bird_med + ent_bird_med + ent_bird_max + 
-              ent_low_med + (1|site), 
-            data = ordered_70) ##no pow_low_med
+#### two interaction model
+clm7<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*rms + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
+##checking for collinearity 
+performance::check_collinearity(clm7)
 
-clm10 <- clmm(acceptable ~ lowfreq_ratio +rms +
-               bgn_low_med + bgn_bird_med + bgn_bird_max + pow_bird_max + pow_low_med + pow_bird_med + ent_bird_max + ent_low_med
-              + (1|site), 
-             data = ordered_70) ##no ent_bird_med
+#### two interaction model
+clm8<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med +  lowfreq_ratio*ent_low_med + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
 
-clm11 <- clmm(acceptable ~ lowfreq_ratio +rms +
-               bgn_low_med + bgn_bird_med + bgn_bird_max + pow_bird_max + pow_low_med + pow_bird_med + ent_bird_med + ent_bird_max
-              + ent_low_med + (1|site), 
-             data = ordered_70) ##no ent_bird_max
+##checking for collinearity 
+performance::check_collinearity(clm8)
 
-##model with only variables from the noise band (low frequency band)
-clm12 <- clmm(acceptable ~ lowfreq_ratio + rms + bgn_low_med + pow_low_med + ent_low_med + (1|site),
-             data = ordered_70) 
+AICtab(clm1, clm2, clm3, clm4, clm5, clm6, clm7, clm8)
 
-## clm13 and clm14 are clm12 with either rms or lowfreq_ratio
-clm13 <- clmm(acceptable ~ lowfreq_ratio + bgn_low_med + pow_low_med + ent_low_med + (1|site),
-             data = ordered_70)
+#### can we simplify the top model?
+drop1(clm6)
 
-clm14 <- clmm(acceptable ~ rms + bgn_low_med + pow_low_med + ent_low_med + (1|site),
-             data = ordered_70)
-
-##model with only variables from the bird band, and then with rms or lowfreq_ratio
-clm15 <- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med + pow_bird_med + ent_bird_med + (1|site),
-             data = ordered_70)
-
-clm16 <- clmm(acceptable ~ lowfreq_ratio + bgn_bird_med + pow_bird_med + ent_bird_med + (1|site),
-             data = ordered_70)
-
-clm17 <- clmm(acceptable ~ rms + bgn_bird_med + pow_bird_med + ent_bird_med + (1|site),
-             data = ordered_70)
-
-##model with rms and lowfreq_ratio removed
-clm18 <- clmm(acceptable ~ bgn_low_med + pow_low_med + ent_low_med + (1|site),
-data = ordered_70)
-
-##model based on clm8 (best model) with covariates CI encompassing 0 removed
-clm19 <- clmm(acceptable ~ rms + lowfreq_ratio + bgn_low_med + bgn_bird_max + pow_low_med + pow_bird_med + (1|site),
-             data = ordered_70)
-
-####replicated models with interactions included####
-
-##calculating new variable##
-ordered_70 <- ordered_70 |>
-  mutate(snr_bird = pow_bird_med/bgn_bird_med)
-
-clm20<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med + bgn_bird_max +
-             bgn_low_med + pow_bird_med + pow_bird_max + pow_low_med + ent_bird_med + ent_bird_max + ent_low_med + snr_bird +
-              lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-              rms * ent_bird_med + (1|site), 
-           data = ordered_70)
-
-##global model with bgn_bird_med
-clm21<- clmm(acceptable ~ lowfreq_ratio +rms + bgn_bird_med + pow_bird_med + pow_bird_max + pow_low_med + ent_bird_med +
-             ent_bird_max + ent_low_med + snr_bird + lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + 
-             lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-             rms * ent_bird_med + (1|site), 
-           data = ordered_70)
-
-##global model with bgn_bird_max
-clm22<- clmm(acceptable ~ lowfreq_ratio +rms + bgn_bird_max +
-             pow_bird_med + pow_bird_max + pow_low_med + ent_bird_med + ent_bird_max + ent_low_med + snr_bird +
-             lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-             rms * ent_bird_med + (1|site), 
-           data = ordered_70)
-
-##global model with bgn_low_Med
-clm23<- clmm(acceptable ~ lowfreq_ratio + rms +
-             bgn_low_med + pow_bird_med + pow_bird_max + pow_low_med + ent_bird_med + ent_bird_max + ent_low_med + snr_bird +
-              lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-              rms * ent_bird_med + (1|site), 
-           data = ordered_70)
-
-##selcting which model is best using AIC 
-AICtab(clm20, clm21, clm22, clm23)
-
-##Other models -- clm1 but testing without each of the highly correlated variables
-
-clm24 <- clmm(acceptable ~ lowfreq_ratio + rms +
-              bgn_low_med + bgn_bird_max + pow_bird_max + pow_low_med + pow_bird_med + ent_bird_med + ent_bird_max + ent_low_med + 
-               snr_bird + lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-               rms * ent_bird_med + (1|site), 
-            data = ordered_70) ##no bgn_bird_med
-
-clm25 <- clmm(acceptable ~ lowfreq_ratio + rms +
-              bgn_low_med + bgn_bird_med + pow_bird_max + pow_low_med + pow_bird_med + ent_bird_med +ent_bird_max +ent_low_med + snr_bird +
-              lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-              rms * ent_bird_med + (1|site), 
-            data = ordered_70) ##no bgn_bird_max
-
-clm26 <- clmm(acceptable ~ lowfreq_ratio +rms +
-              bgn_low_med + bgn_bird_med + bgn_bird_max + pow_bird_max + pow_low_med + ent_bird_med +ent_bird_max +ent_low_med + snr_bird +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-               rms * ent_bird_med + (1|site), 
-            data = ordered_70) ##no pow_bird_med
-
-clm27 <- clmm(acceptable ~ lowfreq_ratio +rms +
-              bgn_low_med + bgn_bird_med + bgn_bird_max + pow_low_med + pow_bird_med + ent_bird_med +ent_bird_max +ent_low_med + snr_bird +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-               rms * ent_bird_med + (1|site), 
-            data = ordered_70) ##no pow_bird_max
-
-clm28 <- clmm(acceptable ~ lowfreq_ratio +rms +
-              bgn_low_med + bgn_bird_med + bgn_bird_max + pow_bird_max + pow_low_med + pow_bird_med + ent_bird_med +ent_bird_max +ent_low_med + snr_bird +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-               rms * ent_bird_med + (1|site), 
-            data = ordered_70) ##no pow_low_med
-
-clm29 <- clmm(acceptable ~ lowfreq_ratio +rms +
-               bgn_low_med + bgn_bird_med + bgn_bird_max + pow_bird_max + pow_low_med + pow_bird_med + ent_bird_max + ent_low_med + snr_bird +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-               rms * ent_bird_med + (1|site), 
-             data = ordered_70) ##no ent_bird_med
-
-clm30 <- clmm(acceptable ~ lowfreq_ratio +rms +
-               bgn_low_med + bgn_bird_med + bgn_bird_max + pow_bird_max + pow_low_med + pow_bird_med + ent_bird_med +ent_bird_max +ent_low_med + snr_bird +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-               rms * ent_bird_med + (1|site), 
-             data = ordered_70) ##no ent_bird_max
-
-clm31 <- clmm(acceptable ~ lowfreq_ratio + rms + bgn_low_med + pow_low_med + ent_low_med + snr_bird +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-               rms * ent_bird_med + (1|site),
-             data = ordered_70) 
-
-clm32 <- clmm(acceptable ~ lowfreq_ratio + bgn_low_med + pow_low_med + ent_low_med + snr_bird +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-               rms * ent_bird_med + (1|site),
-             data = ordered_70)
-
-clm33 <- clmm(acceptable ~ rms + bgn_low_med + pow_low_med + ent_low_med + snr_bird +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-               rms * ent_bird_med + (1|site),
-             data = ordered_70)
-
-clm34 <- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med + pow_bird_med + ent_bird_med + snr_bird +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-               rms * ent_bird_med + (1|site),
-             data = ordered_70)
-
-clm35 <- clmm(acceptable ~ lowfreq_ratio + bgn_bird_med + pow_bird_med + ent_bird_med + snr_bird +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-               rms * ent_bird_med + (1|site),
-             data = ordered_70)
-
-clm36 <- clmm(acceptable ~ rms + bgn_bird_med + pow_bird_med + ent_bird_med + snr_bird +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-               rms * ent_bird_med + (1|site),
-             data = ordered_70)
-
-clm37 <- clmm(acceptable ~ bgn_low_med + pow_low_med + ent_low_med + snr_bird +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-               rms * ent_bird_med + (1|site),
-             data = ordered_70)
-
-##clm19 (best model) with interactions
-clm38 <- clmm(acceptable ~ rms + lowfreq_ratio + bgn_low_med + bgn_bird_max + pow_low_med + pow_bird_med + snr_bird +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio +
-               rms * ent_bird_med + (1|site),
-             data = ordered_70)
-
-##clm38 with CIs containing 0 removed, other than rms * ent_bird_med
-clm39 <- clmm(acceptable ~ rms + lowfreq_ratio + bgn_low_med + bgn_bird_max + pow_low_med + pow_bird_med +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + lowfreq_ratio * ent_bird_med + rms * lowfreq_ratio
-              + (1|site),
-             data = ordered_70)
-
-##clm39 with rms * ent_bird_med removed
-clm40 <- clmm(acceptable ~ rms + lowfreq_ratio + bgn_low_med + bgn_bird_max + pow_low_med + pow_bird_med +
-               lowfreq_ratio * pow_bird_med + bgn_low_med * pow_bird_med + rms * lowfreq_ratio + (1|site),
-             data = ordered_70)
 
 ##Candidate models
 models <- list(clm1 = clm1, clm2 = clm2, clm3 = clm3, clm4 = clm4, clm5 = clm5,
-               clm6 = clm6, clm7 = clm7, clm8 = clm8, clm9 = clm9, clm10 = clm10,
-               clm11 = clm11, clm12 = clm12, clm13 = clm13, clm14 = clm14, clm15 = clm15,
-               clm16 = clm16, clm17 = clm17, clm18 = clm18, clm19 = clm19, clm20 = clm20, 
-               clm21 = clm21, clm22 = clm22, clm23 = clm23, clm24 = clm24, clm25 = clm25,
-               clm26 = clm26, clm27 = clm27, clm28 = clm28, clm29 = clm29, clm30 = clm30,
-               clm31 = clm31, clm32 = clm32, clm33 = clm33, clm34 = clm34, clm35 = clm35, 
-               clm36 = clm36, clm37 = clm37, clm38 = clm38, clm39 = clm39, clm40 = clm40)
+               clm6 = clm6, clm7 = clm7, clm8 = clm8, clm9 = clm9)
 
 # Build model selection table
 aic_tab <- data.frame(
@@ -349,151 +223,59 @@ aic_tab
 # Optional: print nicely
 print(aic_tab, row.names = FALSE)
 
-##analyzing candidate models
-summary(clm8)
-confint(clm8)                 
+##analyzing models##
+summary(clm6)
+confint(clm6)
 
-summary(clm19) ##this is clm8 with variables removed and now none of the CIs have 0
-confint(clm19)
+summary(clm2)
+confint(clm2)
 
-summary(clm38) ##this is clm19 with interactions
-confint(clm38)
-
-summary(clm39) ##clm38 with CIs containing 0 removed
-confint(clm39)
-
-summary(clm40) ##clm39 with rms * ent_bird_med removed
-confint(clm40)
-
-############testing to see how well model clm40 predicts the test data###########
-ordered_30 <- df_30 |>
-  filter(acceptable %in% c("y", "b", "n")) |>
-  mutate(acceptable = factor(acceptable,
-                             levels = c("y", "b", "n"),
-                             labels = c("Good", "Borderline", "Bad"),
-                             ordered = TRUE))
+#########deriving optimal thresholds#########
 
 ##drop rows with missing predictors, so predictions and observed line up
-vars <- all.vars(formula(clm39))[-1]
-nd_30 <- ordered_30[complete.cases(ordered_30[, vars]), ]
+vars <- all.vars(formula(clm6))[-1]
+nd_70 <- ordered_70[complete.cases(ordered_70[, vars]), ]
+
+
+# Actual observed categories
+obs_70 <- factor(
+  nd_70$acceptable,
+  levels = c("Good", "Borderline", "Bad"),
+  ordered = TRUE
+)
 
 ##calculating probabilities manually for each row in nd_30 because clmm cannot use predict()
-fixed_formula <- lme4::nobars(formula(clm39)) ##removing random effect term
+fixed_formula <- lme4::nobars(formula(clm6)) ##removing random effect term
 
 X <- model.matrix(
   delete.response(terms(fixed_formula)),
-  data = nd_30
-) ##model matrix converts nd_30 data to numerical values to calculate predicted values
+  data = nd_70
+) ##model matrix converts nd_70 data to numerical values to calculate predicted values
 
 ##removing intercept because clmm stores the intercept as a parameter
 X <- X[, colnames(X) != "(Intercept)", drop = FALSE]
 
-beta <- clm39$beta ##extracting coefficients from clm39
-X <- X[, names(beta), drop = FALSE] ##
+beta <- clm6$beta ##extracting coefficients from model
+X <- X[, names(beta), drop = FALSE] ##keeping only coefficients extracted from model
 
 ##calculate linear predictor
-eta <- as.vector(X %*% beta)
+linearp <- as.vector(X %*% clm6$beta)
 
-alpha <- clm39$alpha ##extracting threshold parameters
-cum_probs <- sapply(alpha, function(a) plogis(a - eta)) ##calculating cumulative probabilities
+alpha <- clm6$alpha ##extracting threshold parameters
+cumu_probs <- sapply(alpha, function(a) plogis(a - linearp)) ##calculating cumulative probabilities
 
 ##calculate probability of each category from cumulative probabilities
-probs_30 <- cbind(
-  Good = cum_probs[, 1],
-  Borderline = cum_probs[, 2] - cum_probs[, 1],
-  Bad = 1 - cum_probs[, 2]
+probs_70 <- cbind(
+  Good = cumu_probs[, 1],
+  Borderline = cumu_probs[, 2] - cumu_probs[, 1],
+  Bad = 1 - cumu_probs[, 2]
 )
 
-dim(probs_30)
+##checking dimensions
+dim(probs_70)
 
-lv <- c("Good", "Borderline", "Bad")
-
-##classifying based on highest probability 
-default_30 <- colnames(probs_30)[max.col(probs_30, ties.method = "first")]
-
-##override with good and bad thresholds
-good_cutoff <- 0.74
-bad_cutoff <- 0.4
-
-adjusted_30 <- rep(NA_character_, nrow(probs_30))
-
-##classifying as bad if the probability exceeds the bad threshold
-adjusted_30[probs_30[, "Bad"] >= bad_cutoff] <- "Bad"
-
-##classifying as good if the probability exceeds the threshold
-adjusted_30[
-  is.na(adjusted_30) & probs_30[, "Good"] >= good_cutoff
-] <- "Good"
-
-##classify all remaining rows as Borderline
-adjusted_30[is.na(adjusted_30)] <- "Borderline"
-
-##converting back to ordered factor
-default_30 <- factor(default_30, levels = lv, ordered = TRUE)  ##predicted categories without cutoff
-adjusted_30     <- factor(adjusted_30,     levels = lv, ordered = TRUE) ##predicted categories with cutoff
-observed   <- factor(nd_30$acceptable, levels = lv, ordered = TRUE) ##categories scored by rater
-
-##creating confusion matrix before and after the 0.25 cutoff
-confusionMatrix(default_30, observed)   
-confusionMatrix(adjusted_30, observed)     
-
-##############deriving optimized threshold###########
-# Identify variables used in clm39
-vars <- all.vars(formula(clm39))[-1]
-
-# Keep complete observations from the training dataset
-nd_train <- ordered_70[
-  complete.cases(ordered_70[, vars]),
-]
-
-# Actual observed categories
-obs_train <- factor(
-  nd_train$acceptable,
-  levels = c("Good", "Borderline", "Bad"),
-  ordered = TRUE
-)
-# Extract fixed-effects formula
-fixed_formula <- lme4::nobars(formula(clm39))
-
-# Create model matrix
-X <- model.matrix(
-  delete.response(terms(fixed_formula)),
-  data = nd_train
-)
-
-# Remove intercept
-X <- X[, colnames(X) != "(Intercept)", drop = FALSE]
-
-# Extract fixed-effect coefficients
-beta <- clm39$beta
-
-# Match columns to coefficient names
-X <- X[, names(beta), drop = FALSE]
-
-# Calculate linear predictor
-eta <- as.vector(X %*% beta)
-
-# Extract thresholds
-alpha <- clm39$alpha
-
-# Calculate cumulative probabilities
-cum_probs <- sapply(alpha, function(a) {
-  plogis(a - eta)
-})
-
-# Calculate probabilities for each category
-probs_train <- cbind(
-  Good = cum_probs[, 1],
-  Borderline = cum_probs[, 2] - cum_probs[, 1],
-  Bad = 1 - cum_probs[, 2]
-)
-
-# Check dimensions
-dim(probs_train)
-length(obs_train)
-
-# Check probabilities sum to 1
-head(rowSums(probs_train))
+##Checking probabilities sum to 1
+head(rowSums(probs_70))
 
 classify_two_threshold <- function(probs, good_cut, bad_cut) {
   
@@ -515,19 +297,19 @@ classify_two_threshold <- function(probs, good_cut, bad_cut) {
   )
 }
 
-# Create threshold combinations
+#creating threshold combinations
 grid <- expand.grid(
   good_cut = seq(0.50, 0.95, by = 0.01),
   bad_cut = seq(0.05, 0.80, by = 0.01)
 )
 
-# Evaluate every combination
+##evaluating every combination
 results_train <- vector("list", nrow(grid))
 
 for (i in seq_len(nrow(grid))) {
   
   pred <- classify_two_threshold(
-    probs_train,
+    probs_70,
     good_cut = grid$good_cut[i],
     bad_cut = grid$bad_cut[i]
   )
@@ -536,7 +318,7 @@ for (i in seq_len(nrow(grid))) {
     good_cut = grid$good_cut[i],
     bad_cut = grid$bad_cut[i],
     kappa = irr::kappa2(
-      data.frame(obs_train, pred),
+      data.frame(obs_70, pred),
       weight = "squared"
     )$value
   )
@@ -544,59 +326,75 @@ for (i in seq_len(nrow(grid))) {
 
 results_train <- do.call(rbind, results_train)
 
-# Find optimal thresholds
+##finding optimal thresholds
 best_train <- results_train[
   which.max(results_train$kappa),
 ]
 
-best_train
+best_train ##optimal thresholds##
 
-best_pred_train <- classify_two_threshold(
-  probs_train,
-  good_cut = best_train$good_cut,
-  bad_cut = best_train$bad_cut
-)
-
-# Training confusion matrix
-caret::confusionMatrix(
-  data = best_pred_train,
-  reference = obs_train
-)
-
-
-#########testing to see how well model clm40 predicts the ordered_70 data###########
-
-##drop rows with missing predictors, so predictions and observed line up
-vars <- all.vars(formula(clm40))[-1]
-nd_70 <- ordered_70[complete.cases(ordered_70[, vars]), ]
-
-##calculating probabilities for each row in nd_30
-probs_70 <- predict(clm40, newdata = nd_70[vars], type = "prob")$fit
-dim(probs_30)   #how many rows and how many columns
-
-lv <- c("Good", "Borderline", "Bad")
-
+##############applying the thresholds##############
 ##classifying based on highest probability 
-default_70 <- colnames(probs_70)[max.col(probs_70, ties.method = "first")]
+###same thing from optimized thresholdes but for nd_30 now###
+vars <- all.vars(formula(clm6))[-1]
+nd_30 <- ordered_30[complete.cases(ordered_30[, vars]), ]
 
-##override with "Borderline" if its probability exceeds 0.25
-borderline_cutoff <- 0.25
-adjusted_70 <- default_70
-adjusted_70[probs_70[, "Borderline"] > borderline_cutoff] <- "Borderline"
+fixed_formula <- lme4::nobars(formula(clm6))
 
+X <- model.matrix(delete.response(terms(fixed_formula)), data = nd_30)
+X <- X[, colnames(X) != "(Intercept)", drop = FALSE]
+X <- X[, names(clm6$beta), drop = FALSE]
+
+linearp <- as.vector(X %*% clm6$beta)
+cumu <- sapply(clm6$alpha, function(a) plogis(a - linearp))
+
+probs_30 <- cbind(Good       = cumu[, 1],
+                  Borderline = cumu[, 2] - cumu[, 1],
+                  Bad        = 1 - cumu[, 2])
+
+dim(probs_30)              # n rows, 3 columns
+nrow(probs_30) == nrow(nd_30)   # should be TRUE
+range(rowSums(probs_30))   # should be 1 1
+
+
+
+default_30 <- colnames(probs_30)[max.col(probs_30, ties.method = "first")]
+
+##override with good and bad thresholds from optimizing thresholds best_train
+good_cutoff <- 0.81
+bad_cutoff <- 0.48
+
+adjusted_30 <- rep(NA_character_, nrow(probs_30))
+
+##classifying as bad if the probability exceeds the bad threshold
+adjusted_30[probs_30[, "Bad"] >= bad_cutoff] <- "Bad"
+
+##classifying as good if the probability exceeds the threshold
+adjusted_30[
+  is.na(adjusted_30) & probs_30[, "Good"] >= good_cutoff
+] <- "Good"
+
+##classify all remaining rows as Borderline
+adjusted_30[is.na(adjusted_30)] <- "Borderline"
+
+##levels
+lv <- c("Good", "Borderline", "Bad")
 ##converting back to ordered factor
-default_70 <- factor(default_70, levels = lv, ordered = TRUE)  ##predicted categories without cutoff
-adjusted_70     <- factor(adjusted_70,     levels = lv, ordered = TRUE) ##predicted categories with cutoff
-observed   <- factor(nd_70$acceptable, levels = lv, ordered = TRUE) ##categories scored by rater
+default_30 <- factor(default_30, levels = lv, ordered = TRUE)  ##predicted categories without cutoff
+adjusted_30     <- factor(adjusted_30,     levels = lv, ordered = TRUE) ##predicted categories with cutoff
+observed   <- factor(nd_30$acceptable, levels = lv, ordered = TRUE) ##categories scored by rater
 
-##creating confusion matrix before and after the 0.25 cutoff
-confusionMatrix(default_70, observed)   
-confusionMatrix(adjusted_70, observed) 
+##creating confusion matrices
+confusionMatrix(default_30, observed)   
+confusionMatrix(adjusted_30, observed)    
 
 
-################## the rest of steves scripts that I don't understand right now ####################
+
+
+####plots and graphs####
 library(pROC)
 
+###ROC curve testing good vs other###
 #actual test outcomes scored from rater
 actual_good <- ifelse(nd_30$acceptable == "Good", 1, 0)
 
@@ -613,7 +411,7 @@ roc_good <- roc(
 auc(roc_good)
 
 # Plot
-plot(
+good <- plot(
   roc_good,
   col = "darkgreen",
   lwd = 2,
@@ -627,121 +425,120 @@ plot(
 abline(a = 0, b = 1, lty = 2, col = "grey50")
 
 
+##ROC curve testing borerline vs other##
+actual_borderline <- ifelse(nd_30$acceptable == "Borderline", 1, 0)
 
+#predicted probability of good
+pred_borderline <- probs_30[, "Borderline"]
 
-
-
-
-
-glm2 <- glm(
-  acceptable ~ z_lowfreq + z_rms,
-  family = binomial,
-  data = noise_metrics
+# ROC curve
+roc_borderline <- roc(
+  response = actual_borderline,
+  predictor = pred_borderline
 )
 
-noise_metrics$pred_glm2 <- predict(
-  glm2,
-  type = "response"
-)
-roc_glm2 <- roc(
-  response = noise_metrics$acceptable,
-  predictor = noise_metrics$pred_glm2
-)
-auc(roc_glm2)
+# AUC
+auc(roc_borderline)
 
-
-
-glm2 <- glm(
-  acceptable ~ z_lowfreq + z_rms,
-  family = binomial,
-  data = noise_metrics
-)
-
-noise_metrics$pred_prob <- predict(
-  glm2,
-  type = "response"
-)
-library(pROC)
-
-roc_glm2 <- roc(
-  response = noise_metrics$acceptable,
-  predictor = noise_metrics$pred_prob
-)
-
-best <- coords(
-  roc_glm2,
-  x = "best",
-  best.method = "youden",
-  ret = c(
-    "threshold",
-    "sensitivity",
-    "specificity"
-  )
-)
-
-best
-
-opt_thresh <- as.numeric(best["threshold"])
-
-noise_metrics$pred_class <- ifelse(
-  noise_metrics$pred_prob >= opt_thresh,
-  1,
-  0
-)
-
-### Confusiotn matrix
-(cm <- table(
-  Observed = noise_metrics$acceptable,
-  Predicted = noise_metrics$pred_class
-))
-
-library(pROC)
-
-# ROC object
-roc_glm2 <- roc(
-  response = noise_metrics$acceptable,
-  predictor = noise_metrics$pred_prob
-)
-
-# Optimal threshold
-best <- coords(
-  roc_glm2,
-  x = "best",
-  best.method = "youden",
-  ret = c("threshold", "sensitivity", "specificity")
-)
-
-# Plot ROC
+# Plot
 plot(
-  roc_glm2,
-  col = "blue",
+  roc_borderline,
+  col = "darkgreen",
   lwd = 2,
   main = paste(
-    "ROC Curve (AUC =",
-    round(auc(roc_glm2), 3),
+    "Borderline vs Other ROC (AUC =",
+    round(auc(roc_borderline), 3),
     ")"
   )
 )
 
 abline(a = 0, b = 1, lty = 2, col = "grey50")
 
-# Add optimal threshold point
-points(
-  x = 1 - best["specificity"],
-  y = best["sensitivity"],
-  pch = 19,
-  col = "red",
-  cex = 1.5
+##ROC curve testing bad vs other##
+actual_bad <- ifelse(nd_30$acceptable == "Bad", 1, 0)
+
+#predicted probability of good
+pred_bad <- probs_30[, "Bad"]
+
+# ROC curve
+roc_bad <- roc(
+  response = actual_bad,
+  predictor = pred_bad
 )
 
-# Label the point
-text(
-  x = 1 - best["specificity"],
-  y = best["sensitivity"],
-  labels = paste(
-    "Threshold =",
-    round(best["threshold"], 3)
-  ),
-  pos = 4,
-  col = "red"
+# AUC
+auc(roc_bad)
+
+# Plot
+plot(
+  roc_bad,
+  col = "darkgreen",
+  lwd = 2,
+  main = paste(
+    "Bad vs Other ROC (AUC =",
+    round(auc(roc_bad), 3),
+    ")"
+  )
 )
+
+abline(a = 0, b = 1, lty = 2, col = "grey50")
+
+##predicted probabilities##
+library(dplyr)
+
+fixed_formula <- lme4::nobars(formula(clm6))
+vals <- all.vars(fixed_formula)[-1]    
+
+##lowfreq values
+lf_vals <- quantile(nd_70$lowfreq_ratio, probs = c(0.025, 0.5, 0.975), na.rm = TRUE)
+
+##rms sequence from the 1st to the 99th percentile
+rms_seq <- seq(quantile(nd_70$rms, 0.01, na.rm = TRUE),
+               quantile(nd_70$rms, 0.99, na.rm = TRUE),
+               length.out = 100)
+
+##every rms value at each of the three lowfreq_ratio values
+newdat <- expand.grid(rms = rms_seq, lowfreq_ratio = lf_vals)
+
+##hold the other predictors at their median
+hold_vars <- setdiff(vals, c("rms", "lowfreq_ratio"))
+for (v in hold_vars) newdat[[v]] <- median(nd_70[[v]], na.rm = TRUE)
+
+##legend labels
+newdat$lf_level <- factor(rep(c("Low (2.5%)", "Median", "High (97.5%)"), each = length(rms_seq)),
+                          levels = c("Low (2.5%)", "Median", "High (97.5%)"))
+nrow(newdat)    # 300
+##model matrix converting data to numerical
+X_grid <- model.matrix(delete.response(terms(fixed_formula)), data = newdat)
+X_grid <- X_grid[, colnames(X_grid) != "(Intercept)", drop = FALSE]
+X_grid <- X_grid[, names(clm6$beta), drop = FALSE]
+
+linearp_grid <- as.vector(X_grid %*% clm6$beta)
+cumu_grid <- sapply(clm6$alpha, function(a) plogis(a - linearp_grid))
+
+probs_grid <- cbind(Good       = cumu_grid[, 1],
+                    Borderline = cumu_grid[, 2] - cumu_grid[, 1],
+                    Bad        = 1 - cumu_grid[, 2])
+dim(probs_grid)   # 300 rows, 3 columns
+
+plot_df <- bind_cols(newdat, as.data.frame(probs_grid)) |>
+  pivot_longer(c(Good, Borderline, Bad),
+               names_to = "quality", values_to = "prob") |>
+  mutate(quality = factor(quality, levels = c("Good", "Borderline", "Bad")))
+
+
+p_all <- ggplot(plot_df, aes(x = rms, y = prob, colour = lf_level)) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~ quality) +
+  scale_colour_brewer(palette = "Set1") +
+  labs(x = "rms (z-score)",
+       y = "Predicted probability",
+       colour = "lowfreq_ratio",
+       title = "Effect of rms on recording quality at low, median and high lowfreq_ratio") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+p_all
+
+ggsave("p_all.png", plot = p_all, width = 8, height = 6, units = "in", dpi = 300)
+
