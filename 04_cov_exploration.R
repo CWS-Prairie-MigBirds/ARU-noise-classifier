@@ -15,22 +15,57 @@ library(patchwork)
 
 df <- readRDS("data/complete_noise_dataset.rds")
 
-#############################
-### scale the variables 
-
 covs <- c("lowfreq_ratio", "rms",
           "bgn_bird_med", "bgn_bird_max", "bgn_low_med",
           "pow_bird_med", "pow_bird_max", "pow_low_med",
           "ent_bird_med", "ent_bird_max", "ent_low_med")
 
-z_df <- df |>
-  mutate(across(all_of(covs),
-                ~ as.numeric(scale(.x))))
+df_covs <- df %>% select(lowfreq_ratio, rms, bgn_bird_med, bgn_bird_max, bgn_low_med,
+                         pow_bird_med, pow_bird_max, pow_low_med, ent_bird_med, ent_bird_max, ent_low_med)
+
+## Check for outliers
+
+##scatter plots
+
+scatter_all <- pairs(df_covs,
+         cex = 0.5,
+         cex.labels = 0.9,
+         main = "Scatterplot Matrix of Covariates") 
+
+scatter_all
 
 # 1. Correlogram
+
+#Choose Pearson correlation when your variables have a linear relationship and 
+#no extreme outliers; choose Spearman correlation when the relationship is 
+#monotonic (consistently increasing or decreasing, even if curved) or involves
+#ordinal data, skewed distributions, or outliers.
+
+## single correlogram
+
+
+corr_pearson <- ggcorr(df_covs,
+                         method = c("pairwise", "pearson"),
+                         label = TRUE, label_size = 3, label_round = 2,
+                         hjust = 0.9, layout.exp = 2,) +
+  labs(title = "Correlogram of Covariates (Pearson)") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+corr_pearson
+
+corr_spearman <- ggcorr(df_covs,
+                       method = c("pairwise", "spearman"),
+                       label = TRUE, label_size = 3, label_round = 2,
+                       hjust = 0.9, layout.exp = 2,) +
+  labs(title = "Correlogram of Covariates (Spearman)") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+corr_spearman
+
+
 ## df of covariates for each habitat type
-boreal_covs <- z_df[z_df$habitat == "boreal", covs]
-grassland_covs <- z_df[z_df$habitat == "grassland", covs]
+boreal_covs <- df[df$habitat == "boreal", covs]
+grassland_covs <- df[df$habitat == "grassland", covs]
 
 ##correlogram for boreal
 boreal_corr <- ggcorr(boreal_covs,
@@ -40,6 +75,7 @@ boreal_corr <- ggcorr(boreal_covs,
   labs(title = "Correlogram of Covariates (Boreal)") +
   theme(plot.title = element_text(hjust = 0.5, face = "bold")) 
 boreal_corr
+
 ##correlogram for grassland
 grassland_corr <- ggcorr(grassland_covs,
        method = c("pairwise", "spearman"),
@@ -68,7 +104,8 @@ grassland_scatter <- pairs(grassland_covs,
 grassland_scatter
 
 # 3. Boxplots by quality of recording
-z_df <- z_df |>
+
+df2 <- df |>
   filter(acceptable %in% c("y", "n", "b")) |> ##filtering out malfunction
   mutate(acceptable = factor(acceptable,
                              levels = c("y", "n", "b"),
@@ -83,7 +120,7 @@ z_df <- z_df |>
     "bgn_low_med", "pow_low_med", "ent_low_med" ##row 3
   ))) ##ordering how the boxplots will appear
 
-quality_bps <-  ggplot(z_df, aes(x = acceptable, y = value, fill = acceptable)) +
+quality_bps <-  ggplot(df2, aes(x = acceptable, y = value, fill = acceptable)) +
   geom_boxplot(alpha = 0.7, notch = TRUE) +
   facet_wrap(~ variable, scales = "free_y", ncol = 4) + 
   scale_fill_brewer(palette = "Set2") +
@@ -98,4 +135,12 @@ quality_bps <-  ggplot(z_df, aes(x = acceptable, y = value, fill = acceptable)) 
 
 quality_bps ##printing plot
 
- 
+## check the outliers
+
+o_rms <- df %>% filter(rms > 10000 & acceptable %in% c("y", "b")) 
+
+o_bgn_bird_max <- df %>% filter(bgn_bird_max < -50 & acceptable == "n") 
+
+o_ent_low_med <- df %>% filter(ent_low_med > 0.3 & acceptable == "y") 
+
+                       
