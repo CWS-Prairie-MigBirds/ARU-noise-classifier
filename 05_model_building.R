@@ -22,53 +22,80 @@ library(GGally)
 
 df <- readRDS("data/complete_noise_dataset.rds")
 
-## z-transform noise covariates
+#############
+#---01 Remove malfunctions and order factor ------------------------------------
+#############
 
-covs <- c("lowfreq_ratio", "rms",
-          "bgn_bird_med", "bgn_bird_max", "bgn_low_med",
-          "pow_bird_med", "pow_bird_max", "pow_low_med",
-          "ent_bird_med", "ent_bird_max", "ent_low_med")
+## filtering for only values of y,n ,b in columm acceptable and 
+## renaming to good, bad, borderline and ranking good < borderline < bad
+df <- df |>
+  filter(acceptable %in% c("y", "b", "n")) |>
+  mutate(acceptable = factor(acceptable,
+                             levels = c("y", "b", "n"),
+                             labels = c("Good", "Borderline", "Bad"),
+                             ordered = TRUE))
 
-z_df <- df |>
-  mutate(across(all_of(covs),
-                ~ as.numeric(scale(.x))))
+#############
+#---02 Split data into training and testing ------------------------------------
+#############
 
 ##split into 70% of property locations for grassland and 30% for testing
 set.seed(6)
-grassland_df <- z_df |> 
+
+grassland_df <- df |> 
   filter(habitat == "grassland") |>
-  mutate(row_id = row_number())
-grassland_70 <- grassland_df |> 
+  mutate(SSU = str_split_i(site, "/", -1),
+         PSU = str_remove(SSU, "-[^-]+$"),
+         row_id = row_number())
+
+## ok so we have PSUs with varying numbers of recordings, let's check it out
+
+grass_psu <- grassland_df  %>% group_by(PSU) %>% summarise(n = n())
+
+grass_ssu <- grassland_df  %>% group_by(SSU) %>% summarise(n = n())
+
+## take 70% of the SSUs for training, 
+g_ssu_70 <- grass_ssu |> 
   slice_sample(prop = 0.7)
+
+grassland_70 <- grassland_df |>
+  filter(SSU %in% g_ssu_70$SSU)
 
 grassland_30 <- grassland_df |>
   filter(!row_id %in% grassland_70$row_id)
   
 ##split into 70% of PSUs for boreal
-boreal_df <- z_df |> filter(habitat == "boreal")
+boreal_df <- df |> filter(habitat == "boreal")
 
 ## pulling PSU out of the path (after the second BBMP)
 boreal_df <- boreal_df |>
-  mutate(psu = str_split_fixed(gsub("\\\\", "/", as.character(site)), "/", 7)[, 5])
+  mutate(PSU = str_split_fixed(gsub("\\\\", "/", as.character(site)), "/", 7)[, 5])
+
+boreal_psu <- boreal_df %>% group_by(PSU) %>% summarise(n = n())
+
 
 #splitting into 70% of PSUs
 set.seed(6)
-psus_70 <- boreal_df |>
-  distinct(psu) |>
+b_psu_70 <- boreal_df |>
+  distinct(PSU) |>
   slice_sample(prop = 0.7)
 
 ##keeping the recording from those PSUs and keep remaining 30% for test data
 boreal_70 <- boreal_df |>
-  semi_join(psus_70, by = "psu")
+  semi_join(b_psu_70, by = "PSU")
 
 boreal_30 <- boreal_df |>
-  anti_join(psus_70, by = "psu")
+  anti_join(b_psu_70, by = "PSU")
 
 ##combining the 70% boreal and grassland
 df_70 <- bind_rows(grassland_70, boreal_70)
 
 ##combining the 30% boreal and grassland
 df_30 <- bind_rows(grassland_30, boreal_30)
+
+#############
+#---03 Check correlations  ------------------------------------
+#############
 
 ##correlogram for the combined 70% df
 covs_70 <- df_70 |>
@@ -82,107 +109,91 @@ corr_70 <- ggcorr(covs_70,
   theme(plot.title = element_text(hjust = 0.5, face = "bold")) 
 corr_70
 
-##filtering for only values of y,n ,b in acceptable and renaming to good, bad, borderline and ranking good < borderline < bad
-ordered_70 <- df_70 |>
-  filter(acceptable %in% c("y", "b", "n")) |>
-  mutate(acceptable = factor(acceptable,
-                             levels = c("y", "b", "n"),
-                             labels = c("Good", "Borderline", "Bad"),
-                             ordered = TRUE))
 
-ordered_30 <- df_30 |>
-  filter(acceptable %in% c("y", "b", "n")) |>
-  mutate(acceptable = factor(acceptable,
-                             levels = c("y", "b", "n"),
-                             labels = c("Good", "Borderline", "Bad"),
-                             ordered = TRUE))
+#############
+#---04 Z-score training data ------------------------------------
+#############
+
+## z-transform noise covariates
+## use mean and SD from training data to scale the test data
+# 1. Compute parameters from training data
+scaler <- preProcess(ordered_70, method = c("center", "scale"))
+
+# 2. Apply to both sets (non-numeric columns are ignored automatically)
+train_scaled <- predict(scaler, ordered_70)
+test_scaled  <- predict(scaler, ordered_30)
+
+
+#############
+#---05 Test covariate subgroups from Ruido package ------------------------------------
+#############
 
 #### Build models for candidate variable subgroups and select which to retain to avoid inclusion of correlated variables
 
 ### entropy
-ent1<-clmm(acceptable ~ ent_bird_med + (1|site), data = ordered_70)
-ent2<-clmm(acceptable ~ ent_bird_max + (1|site), data = ordered_70)
-ent3<-clmm(acceptable ~ ent_low_med + (1|site), data = ordered_70)
+ent1<-clmm(acceptable ~ ent_bird_med + (1|site), data = train_scaled)
+ent2<-clmm(acceptable ~ ent_bird_max + (1|site), data = train_scaled)
+ent3<-clmm(acceptable ~ ent_low_med + (1|site), data = train_scaled)
 AICtab(ent1, ent2, ent3) ### retain only ent_low_med
 
 ### power
-pow1<-clmm(acceptable ~ pow_bird_med + (1|site), data = ordered_70)
-pow2<-clmm(acceptable ~ pow_bird_max + (1|site), data = ordered_70)
-pow3<-clmm(acceptable ~ pow_low_med + (1|site), data = ordered_70)
+pow1<-clmm(acceptable ~ pow_bird_med + (1|site), data = train_scaled)
+pow2<-clmm(acceptable ~ pow_bird_max + (1|site), data = train_scaled)
+pow3<-clmm(acceptable ~ pow_low_med + (1|site), data = train_scaled)
 AICtab(pow1, pow2, pow3) ### retain only pow_low_med
 
 ### bgn
-bgn1<-clmm(acceptable ~ bgn_bird_med + (1|site), data = ordered_70)
-bgn2<-clmm(acceptable ~ bgn_bird_max + (1|site), data = ordered_70)
-bgn3<-clmm(acceptable ~ bgn_low_med + (1|site), data = ordered_70)
+bgn1<-clmm(acceptable ~ bgn_bird_med + (1|site), data = train_scaled)
+bgn2<-clmm(acceptable ~ bgn_bird_max + (1|site), data = train_scaled)
+bgn3<-clmm(acceptable ~ bgn_low_med + (1|site), data = train_scaled)
 AICtab(bgn1, bgn2, bgn3) ### retain only bgn_bird_med
 
 
-cor(ordered_70$lowfreq_ratio, ordered_70$rms,use = "pairwise.complete.obs")
-plot(ordered_70$lowfreq_ratio, ordered_70$rms)
+cor(train_scaled$lowfreq_ratio, train_scaled$rms,use = "pairwise.complete.obs")
+plot(train_scaled$lowfreq_ratio, train_scaled$rms)
 
-### Drop some of the highly correlated variables
-covs_70 <- df_70 |>
-  select(all_of(covs))
-covs_70<-covs_70[, !names(covs_70) %in% c("ent_bird_med", "ent_bird_max", "pow_bird_med", "pow_bird_max", "bgn_bird_max", "bgn_low_med")]
+plot(train_scaled$bgn_bird_med, train_scaled$pow_low_med)
+plot(train_scaled$ent_low_med, train_scaled$pow_low_med)
 
-corr_70 <- ggcorr(covs_70,
-                  method = c("pairwise", "spearman"),
-                  label = TRUE, label_size = 3, label_round = 2,
-                  hjust = 0.9, layout.exp = 2,) +
-  labs(title = "Correlogram of Covariates") +
-  theme(plot.title = element_text(hjust = 0.5, face = "bold")) 
-corr_70
-
+#############
+#---03 Main Model Testing  ------------------------------------
+#############
 
 ##global main effects model
-clm1<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + (1|site), data = ordered_70)
+clm1<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + (1|site), data = train_scaled)
 
 ##checking for collinearity 
 performance::check_collinearity(clm1)
 
+## can't use pow and ent low med in the same model, test which one is better:
+
+pve1<-clmm(acceptable ~ pow_low_med + (1|site), data = train_scaled)
+pve2<-clmm(acceptable ~ ent_low_med + (1|site), data = train_scaled)
+AICtab(pve1, pve2) ### retain only pow_low_med
 
 ##global model with all interactions
-clm2<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*rms + lowfreq_ratio*ent_low_med + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
+
+clm2<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + 
+              lowfreq_ratio*rms  + 
+              bgn_bird_med*pow_low_med +
+              bgn_bird_med*rms +
+              (1|site), data = train_scaled)
 
 ##checking for collinearity 
 performance::check_collinearity(clm2)
 
+# additional candidate models
 
-#### single interaction model
-clm3<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*rms +(1|site), data = ordered_70)
-##checking for collinearity 
-performance::check_collinearity(clm3)
-
-#### single interaction model
-clm4<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*ent_low_med +(1|site), data = ordered_70)
-##checking for collinearity 
-performance::check_collinearity(clm4)
-
-
-#### single interaction model
-clm5<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
-##checking for collinearity 
-performance::check_collinearity(clm5)
+clm3<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*rms + (1|site), data = train_scaled)
+clm4<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*bgn_bird_med + (1|site), data = train_scaled)
+clm5<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + bgn_bird_med*pow_low_med +(1|site), data = train_scaled)
+clm6<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*rms + lowfreq_ratio*bgn_bird_med + (1|site), data = train_scaled)
+clm7<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*rms + bgn_bird_med*pow_low_med + (1|site), data = train_scaled)
+clm8<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + bgn_bird_med*pow_low_med + rms*bgn_bird_med +(1|site), data = train_scaled)
+clm9<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med + lowfreq_ratio*rms + lowfreq_ratio*bgn_bird_med + (1|site), data = train_scaled)
 
 
-#### two interaction model
-clm6<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*rms + lowfreq_ratio*ent_low_med +(1|site), data = ordered_70)
-##checking for collinearity 
-performance::check_collinearity(clm6)
-
-#### two interaction model
-clm7<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*rms + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
-##checking for collinearity 
-performance::check_collinearity(clm7)
-
-#### two interaction model
-clm8<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med +  lowfreq_ratio*ent_low_med + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
-
-##checking for collinearity 
-performance::check_collinearity(clm8)
-
-AICtab(clm1, clm2, clm3, clm4, clm5, clm6, clm7, clm8)
+AICtab(clm1, clm2, clm3, clm4, clm5, clm6, clm7, clm8, clm9)
 
 #### can we simplify the top model?
 drop1(clm6)
@@ -230,16 +241,22 @@ confint(clm6)
 summary(clm2)
 confint(clm2)
 
-#########deriving optimal thresholds#########
+saveRDS(clm6, "clm6.rds")
+
+
+#############
+#---04 Derive optimal thresholds  ------------------------------------
+#############
+
 
 ##drop rows with missing predictors, so predictions and observed line up
 vars <- all.vars(formula(clm6))[-1]
-nd_70 <- ordered_70[complete.cases(ordered_70[, vars]), ]
+nd_70 <- train_scaled[complete.cases(train_scaled[, vars]), ]
 
 
 # Actual observed categories
 obs_70 <- factor(
-  nd_70$acceptable,
+  train_scaled$acceptable,
   levels = c("Good", "Borderline", "Bad"),
   ordered = TRUE
 )
@@ -337,7 +354,7 @@ best_train ##optimal thresholds##
 ##classifying based on highest probability 
 ###same thing from optimized thresholdes but for nd_30 now###
 vars <- all.vars(formula(clm6))[-1]
-nd_30 <- ordered_30[complete.cases(ordered_30[, vars]), ]
+nd_30 <- test_scaled[complete.cases(test_scaled[, vars]), ]
 
 fixed_formula <- lme4::nobars(formula(clm6))
 
@@ -361,8 +378,8 @@ range(rowSums(probs_30))   # should be 1 1
 default_30 <- colnames(probs_30)[max.col(probs_30, ties.method = "first")]
 
 ##override with good and bad thresholds from optimizing thresholds best_train
-good_cutoff <- 0.81
-bad_cutoff <- 0.48
+good_cutoff <- 0.86
+bad_cutoff <- 0.38
 
 adjusted_30 <- rep(NA_character_, nrow(probs_30))
 
@@ -542,3 +559,50 @@ p_all
 
 ggsave("p_all.png", plot = p_all, width = 8, height = 6, units = "in", dpi = 300)
 
+##################################################################################
+#################################################################################
+#############################################################################
+#### older code I moved down here for now
+
+
+
+covs <- c("lowfreq_ratio", "rms",
+          "bgn_bird_med", "bgn_bird_max", "bgn_low_med",
+          "pow_bird_med", "pow_bird_max", "pow_low_med",
+          "ent_bird_med", "ent_bird_max", "ent_low_med")
+
+z_df <- df |>
+  mutate(across(all_of(covs),
+                ~ as.numeric(scale(.x))))
+
+
+
+##filtering for only values of y,n ,b in acceptable and renaming to good, bad, borderline and ranking good < borderline < bad
+ordered_70 <- df_70 |>
+  filter(acceptable %in% c("y", "b", "n")) |>
+  mutate(acceptable = factor(acceptable,
+                             levels = c("y", "b", "n"),
+                             labels = c("Good", "Borderline", "Bad"),
+                             ordered = TRUE))
+
+ordered_30 <- df_30 |>
+  filter(acceptable %in% c("y", "b", "n")) |>
+  mutate(acceptable = factor(acceptable,
+                             levels = c("y", "b", "n"),
+                             labels = c("Good", "Borderline", "Bad"),
+                             ordered = TRUE))
+
+### Drop some of the highly correlated variables
+##JMM: I HAVEN:T UPDATED THE OBJECTS IN THIS FIGURE
+
+covs_70 <- df_70 |>
+  select(all_of(covs))
+covs_70<-covs_70[, !names(covs_70) %in% c("ent_bird_med", "ent_bird_max", "pow_bird_med", "pow_bird_max", "bgn_bird_max", "bgn_low_med")]
+
+corr_70 <- ggcorr(covs_70,
+                  method = c("pairwise", "spearman"),
+                  label = TRUE, label_size = 3, label_round = 2,
+                  hjust = 0.9, layout.exp = 2,) +
+  labs(title = "Correlogram of Covariates") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) 
+corr_70
