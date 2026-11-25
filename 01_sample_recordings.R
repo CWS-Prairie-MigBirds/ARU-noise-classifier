@@ -7,7 +7,7 @@ library(tidyverse)
 library(lubridate)
 
 # Root directory to search
-startingDir <- "D:/Backups/20261005/ARUs/2025"
+startingDir <- "D:/BBMP/2025/Wapusk NP"
 
 # Find all files in all subdirectories containing the prefix
 filez <- list.files(
@@ -39,22 +39,23 @@ filez <- filez %>% rename(file = V1) %>%
   select(-parts)
 
 
-# JMM: For now we are including all dates available, randomly selecting 3 "dawn" recordings and
+# JMM: For now we are sampling within the breeding window of May 28 - July 7,
+# randomly selecting 3 "dawn" recordings and
 # and 3 dusk recordings per location. In order to have more accurate time windows we would
 # need to upload a location table to get sunrise and sunset. I think these broad categories
 # work for now.
 
 set.seed(33)
 
-sampled <- filez %>% 
+sampled <- filez %>% filter(between(date, as.Date("2025-05-28"), as.Date("2025-07-07"))) %>% 
   filter(period %in% c("dawn", "dusk")) %>% 
   group_by(site, period) %>% 
   slice_sample(n = 3) %>% ungroup()
 
 # add broad habitat type based on the program who deployed the ARUs
 
-sampled$habitat <- "grassland"
+sampled$habitat <- "boreal"
 
 # save csv for step 2
 
-write_csv(sampled, "data/sample/CWS_PRA_PAU2025_model_train_recording_sample.csv")
+write_csv(sampled, "data/sample/CWS_PRA_WAPUSK_NP_2025_model_train_recording_sample.csv")
