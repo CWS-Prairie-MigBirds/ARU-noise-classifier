@@ -135,12 +135,5 @@ quality_bps <-  ggplot(df2, aes(x = acceptable, y = value, fill = acceptable)) +
 
 quality_bps ##printing plot
 
-## check the outliers
-
-o_rms <- df %>% filter(rms > 10000 & acceptable %in% c("y", "b")) 
-
-o_bgn_bird_max <- df %>% filter(bgn_bird_max < -50 & acceptable == "n") 
-
-o_ent_low_med <- df %>% filter(ent_low_med > 0.3 & acceptable == "y") 
 
                        

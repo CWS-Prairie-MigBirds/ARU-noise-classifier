@@ -65,28 +65,32 @@ grassland_70 <- grassland_df |>
 grassland_30 <- grassland_df |>
   filter(!row_id %in% grassland_70$row_id)
   
-##split into 70% of PSUs for boreal
+##split into 70% of SSUs for boreal
+
+### change grouping for boreal to be by SSU = site
 boreal_df <- df |> filter(habitat == "boreal")
 
 ## pulling PSU out of the path (after the second BBMP)
 boreal_df <- boreal_df |>
-  mutate(PSU = str_split_fixed(gsub("\\\\", "/", as.character(site)), "/", 7)[, 5])
+  mutate(PSU = str_split_fixed(gsub("\\\\", "/", as.character(site)), "/", 7)[, 5],
+         SSU = str_split_i(site, "/", -1))
 
 boreal_psu <- boreal_df %>% group_by(PSU) %>% summarise(n = n())
+boreal_ssu <- boreal_df %>% group_by(SSU) %>% summarise(n = n())
 
 
-#splitting into 70% of PSUs
+#splitting into 70% of SSUs
 set.seed(6)
 b_psu_70 <- boreal_df |>
-  distinct(PSU) |>
+  distinct(SSU) |>
   slice_sample(prop = 0.7)
 
-##keeping the recording from those PSUs and keep remaining 30% for test data
+##keeping the recording from those SSUs and keep remaining 30% for test data
 boreal_70 <- boreal_df |>
-  semi_join(b_psu_70, by = "PSU")
+  semi_join(b_psu_70, by = "SSU")
 
 boreal_30 <- boreal_df |>
-  anti_join(b_psu_70, by = "PSU")
+  anti_join(b_psu_70, by = "SSU")
 
 ##combining the 70% boreal and grassland
 df_70 <- bind_rows(grassland_70, boreal_70)
@@ -130,6 +134,10 @@ scaler <- preProcess(df_70, method = c("center", "scale"))
 ordered_70 <- predict(scaler, df_70)
 ordered_30  <- predict(scaler, df_30)
 
+#3. Make sure site is a factor
+
+ordered_70$site <- as.factor(ordered_70$site)
+ordered_30$site <- as.factor(ordered_30$site)
 
 #############
 #---05 Test covariate subgroups from Ruido package ------------------------------------
@@ -163,20 +171,15 @@ plot(ordered_70$bgn_bird_med, ordered_70$pow_low_med)
 plot(ordered_70$ent_low_med, ordered_70$pow_low_med)
 
 #############
-#---03 Main Model Testing  ------------------------------------
+#---06 Candidate model set  ------------------------------------
 #############
 
 ##global main effects model
 clm1<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + (1|site), data = ordered_70)
 
 ##checking for collinearity 
+
 performance::check_collinearity(clm1)
-
-## can't use pow and ent low med in the same model, test which one is better:
-
-pve1<-clmm(acceptable ~ pow_low_med + (1|site), data = ordered_70)
-pve2<-clmm(acceptable ~ ent_low_med + (1|site), data = ordered_70)
-AICtab(pve1, pve2) ### retain only pow_low_med
 
 ##global model with all interactions
 
@@ -187,46 +190,33 @@ clm2<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med +
               (1|site), data = ordered_70)
 
 ##checking for collinearity 
-performance::check_collinearity(clm2)
+performance::check_collinearity(clm2) ## does not converge?? VIF all 1.00
 
 # additional candidate models
 
-clm3<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*rms + (1|site), data = ordered_70)
-clm4<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*bgn_bird_med + (1|site), data = ordered_70)
-clm5<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
-clm6<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*rms + lowfreq_ratio*bgn_bird_med + (1|site), data = ordered_70)
-clm7<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*rms + bgn_bird_med*pow_low_med + (1|site), data = ordered_70)
-clm8<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + bgn_bird_med*pow_low_med + rms*bgn_bird_med +(1|site), data = ordered_70)
-clm9<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med + lowfreq_ratio*rms + lowfreq_ratio*bgn_bird_med + (1|site), data = ordered_70)
+clm2<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*rms + lowfreq_ratio*ent_low_med + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
 
-####clmm2 model attempt####
+clm3<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*rms +(1|site), data = ordered_70)
 
-##rebuilding levels for site because i was getting an error saying i had less than 2 sites
-ordered_70$site_id <- factor(as.character(ordered_70$site))
+clm4<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*ent_low_med +(1|site), data = ordered_70)
 
-##confirming number of sites
-nlevels(ordered_70$site_id)
+clm5<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
 
-##model
-clm9 <- clmm2(
-  acceptable ~ rms + lowfreq_ratio:rms + lowfreq_ratio:bgn_bird_med,
-  nominal = ~ lowfreq_ratio + bgn_bird_med + pow_low_med,
-  random = site_id,
-  data = ordered_70,
-  Hess = TRUE,
-  control = clmm2.control(method = "nlminb", iter.max = 4000)
-)
-summary(clm9)
+clm6<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*rms + lowfreq_ratio*ent_low_med +(1|site), data = ordered_70)
 
-##checking for collinearity 
-performance::check_collinearity(clm8)
+clm7<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio*rms + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
 
-AICtab(clm1, clm2, clm3, clm4, clm5, clm6, clm7, clm8, clm9)
+clm8<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med +  lowfreq_ratio*ent_low_med + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
+
+
+AICtab(clm1, clm2, clm3, clm4, clm5, clm6, clm7, clm8)
 
 #### can we simplify the top model?
-drop1(clm6)
+drop1(clm2)
 
-
+#############
+#---07 Full AIC Table  ------------------------------------
+#############
 ##Candidate models
 models <- list(clm1 = clm1, clm2 = clm2, clm3 = clm3, clm4 = clm4, clm5 = clm5,
                clm6 = clm6, clm7 = clm7, clm8 = clm8, clm9 = clm9)
@@ -269,11 +259,49 @@ confint(clm6)
 summary(clm2)
 confint(clm2)
 
+
+#############
+#---08 TEST PROPORTIUONAL ODDS ASSUMPTION  ------------------------------------
+#############
+
+### fit the non- mixed version of clm2
+clm2test<- clm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + lowfreq_ratio:rms + lowfreq_ratio:ent_low_med + bgn_bird_med:pow_low_med , data = ordered_70)
+
+nominal_test(clm2test) ### test proportional odds assumption
+
+#############
+#---09 Run clmm2 and brms models if test fails   ------------------------------------
+#############
+
+####clmm2 model attempt####
+
+##rebuilding levels for site because i was getting an error saying i had less than 2 sites
+ordered_70$site_id <- factor(as.character(ordered_70$site))
+
+##confirming number of sites
+nlevels(ordered_70$site_id)
+
+##model
+relaxed_clm6 <- clmm2(
+  acceptable ~ rms + lowfreq_ratio:rms + lowfreq_ratio:bgn_bird_med,
+  nominal = ~ lowfreq_ratio + bgn_bird_med + pow_low_med,
+  random = site_id,
+  data = ordered_70,
+  Hess = TRUE,
+  control = clmm2.control(method = "nlminb", iter.max = 4000)
+)
+summary(relaxed_clm6)
+
+
+#############
+#---10 SAVE THE TOP MODEL  ------------------------------------
+#############
+
 saveRDS(clm6, "clm6.rds")
 
 
 #############
-#---04 Derive optimal thresholds  ------------------------------------
+#---11 Derive optimal thresholds  ------------------------------------
 #############
 
 
@@ -432,8 +460,6 @@ observed   <- factor(nd_30$acceptable, levels = lv, ordered = TRUE) ##categories
 ##creating confusion matrices
 confusionMatrix(default_30, observed)   
 confusionMatrix(adjusted_30, observed)    
-
-
 
 
 ####plots and graphs####
