@@ -99,6 +99,12 @@ df_30 <- bind_rows(grassland_30, boreal_30)
 #############
 
 ##correlogram for the combined 70% df
+
+covs <- c("lowfreq_ratio", "rms",
+          "bgn_bird_med", "bgn_bird_max", "bgn_low_med",
+          "pow_bird_med", "pow_bird_max", "pow_low_med",
+          "ent_bird_med", "ent_bird_max", "ent_low_med")
+
 covs_70 <- df_70 |>
   select(all_of(covs))
 
@@ -118,11 +124,11 @@ corr_70
 ## z-transform noise covariates
 ## use mean and SD from training data to scale the test data
 # 1. Compute parameters from training data
-scaler <- preProcess(ordered_70, method = c("center", "scale"))
+scaler <- preProcess(df_70, method = c("center", "scale"))
 
 # 2. Apply to both sets (non-numeric columns are ignored automatically)
-train_scaled <- predict(scaler, ordered_70)
-test_scaled  <- predict(scaler, ordered_30)
+ordered_70 <- predict(scaler, df_70)
+ordered_30  <- predict(scaler, df_30)
 
 
 #############
@@ -132,44 +138,44 @@ test_scaled  <- predict(scaler, ordered_30)
 #### Build models for candidate variable subgroups and select which to retain to avoid inclusion of correlated variables
 
 ### entropy
-ent1<-clmm(acceptable ~ ent_bird_med + (1|site), data = train_scaled)
-ent2<-clmm(acceptable ~ ent_bird_max + (1|site), data = train_scaled)
-ent3<-clmm(acceptable ~ ent_low_med + (1|site), data = train_scaled)
+ent1<-clmm(acceptable ~ ent_bird_med + (1|site), data = ordered_70)
+ent2<-clmm(acceptable ~ ent_bird_max + (1|site), data = ordered_70)
+ent3<-clmm(acceptable ~ ent_low_med + (1|site), data = ordered_70)
 AICtab(ent1, ent2, ent3) ### retain only ent_low_med
 
 ### power
-pow1<-clmm(acceptable ~ pow_bird_med + (1|site), data = train_scaled)
-pow2<-clmm(acceptable ~ pow_bird_max + (1|site), data = train_scaled)
-pow3<-clmm(acceptable ~ pow_low_med + (1|site), data = train_scaled)
+pow1<-clmm(acceptable ~ pow_bird_med + (1|site), data = ordered_70)
+pow2<-clmm(acceptable ~ pow_bird_max + (1|site), data = ordered_70)
+pow3<-clmm(acceptable ~ pow_low_med + (1|site), data = ordered_70)
 AICtab(pow1, pow2, pow3) ### retain only pow_low_med
 
 ### bgn
-bgn1<-clmm(acceptable ~ bgn_bird_med + (1|site), data = train_scaled)
-bgn2<-clmm(acceptable ~ bgn_bird_max + (1|site), data = train_scaled)
-bgn3<-clmm(acceptable ~ bgn_low_med + (1|site), data = train_scaled)
+bgn1<-clmm(acceptable ~ bgn_bird_med + (1|site), data = ordered_70)
+bgn2<-clmm(acceptable ~ bgn_bird_max + (1|site), data = ordered_70)
+bgn3<-clmm(acceptable ~ bgn_low_med + (1|site), data = ordered_70)
 AICtab(bgn1, bgn2, bgn3) ### retain only bgn_bird_med
 
 
-cor(train_scaled$lowfreq_ratio, train_scaled$rms,use = "pairwise.complete.obs")
-plot(train_scaled$lowfreq_ratio, train_scaled$rms)
+cor(ordered_70$lowfreq_ratio, ordered_70$rms,use = "pairwise.complete.obs")
+plot(ordered_70$lowfreq_ratio, ordered_70$rms)
 
-plot(train_scaled$bgn_bird_med, train_scaled$pow_low_med)
-plot(train_scaled$ent_low_med, train_scaled$pow_low_med)
+plot(ordered_70$bgn_bird_med, ordered_70$pow_low_med)
+plot(ordered_70$ent_low_med, ordered_70$pow_low_med)
 
 #############
 #---03 Main Model Testing  ------------------------------------
 #############
 
 ##global main effects model
-clm1<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + (1|site), data = train_scaled)
+clm1<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med + (1|site), data = ordered_70)
 
 ##checking for collinearity 
 performance::check_collinearity(clm1)
 
 ## can't use pow and ent low med in the same model, test which one is better:
 
-pve1<-clmm(acceptable ~ pow_low_med + (1|site), data = train_scaled)
-pve2<-clmm(acceptable ~ ent_low_med + (1|site), data = train_scaled)
+pve1<-clmm(acceptable ~ pow_low_med + (1|site), data = ordered_70)
+pve2<-clmm(acceptable ~ ent_low_med + (1|site), data = ordered_70)
 AICtab(pve1, pve2) ### retain only pow_low_med
 
 ##global model with all interactions
@@ -178,20 +184,20 @@ clm2<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med +
               lowfreq_ratio*rms  + 
               bgn_bird_med*pow_low_med +
               bgn_bird_med*rms +
-              (1|site), data = train_scaled)
+              (1|site), data = ordered_70)
 
 ##checking for collinearity 
 performance::check_collinearity(clm2)
 
 # additional candidate models
 
-clm3<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*rms + (1|site), data = train_scaled)
-clm4<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*bgn_bird_med + (1|site), data = train_scaled)
-clm5<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + bgn_bird_med*pow_low_med +(1|site), data = train_scaled)
-clm6<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*rms + lowfreq_ratio*bgn_bird_med + (1|site), data = train_scaled)
-clm7<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*rms + bgn_bird_med*pow_low_med + (1|site), data = train_scaled)
-clm8<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + bgn_bird_med*pow_low_med + rms*bgn_bird_med +(1|site), data = train_scaled)
-clm9<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med + lowfreq_ratio*rms + lowfreq_ratio*bgn_bird_med + (1|site), data = train_scaled)
+clm3<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*rms + (1|site), data = ordered_70)
+clm4<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*bgn_bird_med + (1|site), data = ordered_70)
+clm5<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
+clm6<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*rms + lowfreq_ratio*bgn_bird_med + (1|site), data = ordered_70)
+clm7<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + lowfreq_ratio*rms + bgn_bird_med*pow_low_med + (1|site), data = ordered_70)
+clm8<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + bgn_bird_med*pow_low_med + rms*bgn_bird_med +(1|site), data = ordered_70)
+clm9<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med + lowfreq_ratio*rms + lowfreq_ratio*bgn_bird_med + (1|site), data = ordered_70)
 
 ####clmm2 model attempt####
 
@@ -273,12 +279,12 @@ saveRDS(clm6, "clm6.rds")
 
 ##drop rows with missing predictors, so predictions and observed line up
 vars <- all.vars(formula(clm6))[-1]
-nd_70 <- train_scaled[complete.cases(train_scaled[, vars]), ]
+nd_70 <- ordered_70[complete.cases(ordered_70[, vars]), ]
 
 
 # Actual observed categories
 obs_70 <- factor(
-  train_scaled$acceptable,
+  ordered_70$acceptable,
   levels = c("Good", "Borderline", "Bad"),
   ordered = TRUE
 )
@@ -376,7 +382,7 @@ best_train ##optimal thresholds##
 ##classifying based on highest probability 
 ###same thing from optimized thresholdes but for nd_30 now###
 vars <- all.vars(formula(clm6))[-1]
-nd_30 <- test_scaled[complete.cases(test_scaled[, vars]), ]
+nd_30 <- ordered_30[complete.cases(ordered_30[, vars]), ]
 
 fixed_formula <- lme4::nobars(formula(clm6))
 
@@ -593,10 +599,7 @@ sd_rms <- sd(df$rms, na.rm = TRUE)
 
 
 
-covs <- c("lowfreq_ratio", "rms",
-          "bgn_bird_med", "bgn_bird_max", "bgn_low_med",
-          "pow_bird_med", "pow_bird_max", "pow_low_med",
-          "ent_bird_med", "ent_bird_max", "ent_low_med")
+
 
 z_df <- df |>
   mutate(across(all_of(covs),
