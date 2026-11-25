@@ -18,6 +18,7 @@ library(broom)
 library(tidyr)
 library(ggplot2)
 library(GGally)
+library(brms)
 
 
 df <- readRDS("data/complete_noise_dataset.rds")
@@ -179,10 +180,29 @@ performance::check_collinearity(clm7)
 #### two interaction model
 clm8<- clmm(acceptable ~ lowfreq_ratio + rms + bgn_bird_med +  pow_low_med + ent_low_med +  lowfreq_ratio*ent_low_med + bgn_bird_med*pow_low_med +(1|site), data = ordered_70)
 
+####clmm2 model attempt####
+
+##rebuilding levels for site because i was getting an error saying i had less than 2 sites
+ordered_70$site_id <- factor(as.character(ordered_70$site))
+
+##confirming number of sites
+nlevels(ordered_70$site_id)
+
+##model
+clm9 <- clmm2(
+  acceptable ~ rms + lowfreq_ratio:rms + lowfreq_ratio:bgn_bird_med,
+  nominal = ~ lowfreq_ratio + bgn_bird_med + pow_low_med,
+  random = site_id,
+  data = ordered_70,
+  Hess = TRUE,
+  control = clmm2.control(method = "nlminb", iter.max = 4000)
+)
+summary(clm9)
+
 ##checking for collinearity 
 performance::check_collinearity(clm8)
 
-AICtab(clm1, clm2, clm3, clm4, clm5, clm6, clm7, clm8)
+AICtab(clm1, clm2, clm3, clm4, clm5, clm6, clm7, clm8, clm9)
 
 #### can we simplify the top model?
 drop1(clm6)
@@ -529,16 +549,35 @@ plot_df <- bind_cols(newdat, as.data.frame(probs_grid)) |>
 
 p_all <- ggplot(plot_df, aes(x = rms, y = prob, colour = lf_level)) +
   geom_line(linewidth = 1) +
-  facet_wrap(~ quality) +
+  facet_wrap(~ quality, ncol = 1) +
   scale_colour_brewer(palette = "Set1") +
   labs(x = "rms (z-score)",
        y = "Predicted probability",
-       colour = "lowfreq_ratio",
-       title = "Effect of rms on recording quality at low, median and high lowfreq_ratio") +
+       colour = "lowfreq_ratio") +
   theme_minimal() +
   theme(plot.title = element_text(hjust = 0.5, face = "bold"))
 
 p_all
 
-ggsave("p_all.png", plot = p_all, width = 8, height = 6, units = "in", dpi = 300)
+ggsave("p_all.png", plot = p_all, width = 8, height = 6, units = "px", dpi = 300)
 
+##predicted probabilities on raw rms values
+
+##original mean and SD of rms
+mean_rms <- mean(df$rms, na.rm = TRUE)
+sd_rms <- sd(df$rms, na.rm = TRUE)
+
+##back transforming plot data##
+plot_df$rms_raw <- plot_df$rms * sd_rms + mean_rms
+
+##plot
+p_raw <- ggplot(plot_df, aes(x = rms_raw, y = prob, colour = lf_level)) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~ quality, ncol = 1) +
+  scale_colour_brewer(palette = "Set1") +
+  labs(x = "rms",
+       y = "Predicted probability",
+       colour = "lowfreq_ratio") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+p_raw
